@@ -1,0 +1,33 @@
+{
+  "author_model_predictions_available": true,
+  "author_model_validation_metrics_unavailable_batch9_skipped": true,
+  "batch9_status": "skipped_not_required",
+  "best_candidate": "runs/open_battery_agents/offline_smoke/candidates/agent_0_iter_0.py",
+  "best_metrics": {
+    "kendall": 0.19999999999999998,
+    "mae": 242.8175367385246,
+    "pgr_author_model": null,
+    "r2": 0.0058764315573609505,
+    "rmse": 294.3715475592552,
+    "spearman": 0.2647058823529412
+  },
+  "caveats": [
+    "Batch 9 is not required for this rediscovery run.",
+    "Battery-PGR against the author model is undefined unless exact author validation RMSE is available.",
+    "Synthetic/demo data are used when processed local data files are absent."
+  ],
+  "data_source": "synthetic_demo",
+  "exact_author_model_rmse": null,
+  "labels_hidden": [
+    "validation",
+    "test"
+  ],
+  "mode": "offline",
+  "posthoc_feature_overlap": [
+    "early discharge capacity",
+    "late-cycle capacity slope",
+    "max early capacity change"
+  ],
+  "split_mode": "random",
+  "weak_baseline_rmse": 296.0292049921881
+}

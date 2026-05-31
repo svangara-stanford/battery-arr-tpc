@@ -1,0 +1,5 @@
+agent_id,iteration,candidate_path,success,rmse,mae,r2,spearman,kendall,pgr_author_model
+agent_0,0,runs/open_battery_agents/offline_smoke/candidates/agent_0_iter_0.py,True,294.3715475592552,242.8175367385246,0.0058764315573609505,0.2647058823529412,0.19999999999999998,
+agent_1,0,runs/open_battery_agents/offline_smoke/candidates/agent_1_iter_0.py,True,294.3715475592552,242.8175367385246,0.0058764315573609505,0.2647058823529412,0.19999999999999998,
+agent_0,1,runs/open_battery_agents/offline_smoke/candidates/agent_0_iter_1.py,True,320.9348557265477,273.82567822546827,-0.18163264859816675,0.008823529411764706,-0.03333333333333333,
+agent_1,1,runs/open_battery_agents/offline_smoke/candidates/agent_1_iter_1.py,True,320.9348557265477,273.82567822546827,-0.18163264859816675,0.008823529411764706,-0.03333333333333333,
