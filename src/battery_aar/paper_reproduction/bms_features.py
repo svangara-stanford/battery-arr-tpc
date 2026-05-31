@@ -66,13 +66,26 @@ def _array(values: Any, dtype: type = float) -> np.ndarray:
 
 
 def _extract_lifetime(summary: dict[str, Any]) -> float | None:
-    q = np.asarray(summary.get("discharge_capacity", []), dtype=float)
+    q = _extract_summary_q_discharge(summary)
     if q.size == 0:
         return None
     below = np.where(q < 0.8 * q[1] if q.size > 1 else q < 0.8 * q[0])[0]
     if below.size:
         return float(below[0] + 1)
     return float(q.size)
+
+
+def _extract_summary_q_discharge(summary: dict[str, Any]) -> np.ndarray:
+    q = np.asarray(summary.get("discharge_capacity", []), dtype=float)
+    cycle_index = np.asarray(summary.get("cycle_index", []), dtype=float)
+    if q.size == 0:
+        return q
+    if cycle_index.size == q.size:
+        mask = np.isfinite(cycle_index) & (cycle_index >= 1)
+        if np.any(mask):
+            order = np.argsort(cycle_index[mask])
+            return q[mask][order]
+    return q
 
 
 def _extract_qdlin(ci: dict[str, Any], cycle_index: int) -> tuple[np.ndarray, np.ndarray]:
@@ -108,7 +121,7 @@ def load_cell_from_json(path: str | Path, required_cycles: tuple[int, ...] = (10
     batch_id = source.parent.name
     cell_id = f"{batch_id}_CH{channel_int}" if channel_int is not None else source.stem
 
-    q_discharge = _array(summary.get("discharge_capacity", []), float)
+    q_discharge = _extract_summary_q_discharge(summary)
     if q_discharge.size == 0:
         raise CurveArrayError(f"{source} does not contain summary.discharge_capacity")
 
@@ -153,7 +166,15 @@ def load_cells_from_batch_with_status(
         try:
             cells.append(load_cell_from_json(path, required_cycles=required_cycles))
         except Exception as exc:
-            excluded.append({"path": str(path), "reason": str(exc)})
+            match = re.search(r"_CH(\d+)_", path.name)
+            excluded.append(
+                {
+                    "path": str(path),
+                    "cell_id": path.stem,
+                    "channel": match.group(1) if match else "",
+                    "reason": str(exc),
+                }
+            )
             continue
         if max_cells is not None and len(cells) >= max_cells:
             break

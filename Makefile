@@ -7,7 +7,7 @@ inspect-author-model:
 	python scripts/inspect_oed_mat_model.py --model literature_models_and_data/battery-fast-charging/BMS-autoanalysis/oed_model.mat
 
 attia-reference-smoke:
-	python scripts/run_attia_reference_reproduction.py --smoke --allow-partial --skip-validation-batch
+	python scripts/run_attia_reference_reproduction.py --smoke --allow-partial --skip-validation-batch --overwrite
 
 attia-reference-exact:
 	python scripts/run_attia_reference_reproduction.py \
@@ -15,7 +15,8 @@ attia-reference-exact:
 		--out runs/attia_reference_reproduction \
 		--reports-dir reports \
 		--require-exact-author-model \
-		--skip-validation-batch
+		--skip-validation-batch \
+		--overwrite
 
 agent-rediscovery-offline:
 	python scripts/run_agentic_rediscovery.py --offline --agents 2 --iterations 2 --out runs/open_battery_agents/offline_smoke --reports-dir reports

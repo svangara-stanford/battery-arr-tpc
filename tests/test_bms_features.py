@@ -1,6 +1,6 @@
 import numpy as np
 
-from battery_aar.paper_reproduction.bms_features import BatteryCell, build_feature_vector
+from battery_aar.paper_reproduction.bms_features import BatteryCell, _extract_summary_q_discharge, build_feature_vector
 
 
 def synthetic_cell(cutoff=100):
@@ -32,3 +32,8 @@ def test_build_feature_vector_uses_matlab_summary_indexing():
     assert np.isclose(feat[2], cell.q_discharge[99])
     assert status == "ok"
     assert np.isfinite(feat[:15]).all()
+
+
+def test_summary_cycle_zero_is_dropped_for_matlab_alignment():
+    q = _extract_summary_q_discharge({"cycle_index": [0, 1, 2, 3], "discharge_capacity": [1.5, 1.08, 1.07, 1.06]})
+    assert q.tolist() == [1.08, 1.07, 1.06]

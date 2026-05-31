@@ -3,10 +3,17 @@ from __future__ import annotations
 import pickle
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from sklearn.kernel_approximation import Nystroem
+
+PAPER_TOP_PROTOCOLS = (
+    (4.8, 5.2, 5.2, 4.160),
+    (5.2, 5.2, 4.8, 4.160),
+    (4.4, 5.6, 5.2, 4.252),
+)
 
 
 @dataclass
@@ -117,24 +124,37 @@ class BayesGap:
             batch_arms.append(a_t)
             candidate_arms.remove(a_t)
 
-        state_path = out / f"{round_idx}.pkl"
+        state_path = out / f"round_{round_idx}_state.pkl"
         with state_path.open("wb") as handle:
             pickle.dump([proposal_arms, proposal_gaps, X_t, Y_t, beta], handle)
 
         selected = self.policies.iloc[batch_arms].reset_index(drop=True)
-        selected.to_csv(out / f"{round_idx}_next_batch.csv", index=False)
+        next_batch_path = out / f"round_{round_idx}_next_batch.csv"
+        selected.to_csv(next_batch_path, index=False)
         bounds = self.policies.copy()
         bounds["upper_bound"] = upper + self.config.standardization_mean
         bounds["lower_bound"] = lower + self.config.standardization_mean
         bounds["mean_bound"] = (bounds["upper_bound"] + bounds["lower_bound"]) / 2
-        bounds.to_csv(out / f"{round_idx}_bounds.csv", index=False)
-        with (out / f"{round_idx}_bounds.pkl").open("wb") as handle:
+        bounds["posterior_half_width"] = (bounds["upper_bound"] - bounds["lower_bound"]) / 2
+        bounds_path = out / f"round_{round_idx}_bounds.csv"
+        bounds.to_csv(bounds_path, index=False)
+        bounds_pickle_path = out / f"round_{round_idx}_bounds.pkl"
+        with bounds_pickle_path.open("wb") as handle:
             pickle.dump([self.param_space, bounds["upper_bound"].to_numpy(), bounds["lower_bound"].to_numpy(), bounds["mean_bound"].to_numpy()], handle)
 
         best_summary = None
         if best_arm_params is not None:
             best_summary = {"C1": float(best_arm_params[0]), "C2": float(best_arm_params[1]), "C3": float(best_arm_params[2])}
-        return {"round_idx": round_idx, "state_path": state_path, "next_batch": selected, "bounds": bounds, "best_arm": best_summary}
+        return {
+            "round_idx": round_idx,
+            "state_path": state_path,
+            "next_batch": selected,
+            "next_batch_path": next_batch_path,
+            "bounds": bounds,
+            "bounds_path": bounds_path,
+            "bounds_pickle_path": bounds_pickle_path,
+            "best_arm": best_summary,
+        }
 
 
 def _find_J_t(candidate_arms: list[int], upper: np.ndarray, lower: np.ndarray, num_arms: int) -> tuple[int, float]:
@@ -176,9 +196,93 @@ def run_closed_loop(
     config: BayesGapConfig | None = None,
 ) -> list[dict[str, object]]:
     agent = BayesGap.from_csv(policies_csv, config)
-    results = [agent.run_round(0, out_dir)]
+    out = Path(out_dir)
+    results = [agent.run_round(0, out)]
+    results[0]["consumed_prediction_file"] = None
+    results[0]["input_rows"] = 0
+    results[0]["round_description"] = "generate/select initial batch if needed"
     previous_state = results[0]["state_path"]
     for idx, pred_csv in enumerate(prediction_csvs or [], start=1):
-        results.append(agent.run_round(idx, out_dir, previous_state_path=previous_state, previous_predictions_csv=pred_csv))
+        early_pred = read_early_predictions(pred_csv)
+        round_result = agent.run_round(idx, out, previous_state_path=previous_state, previous_predictions_csv=pred_csv)
+        round_result["consumed_prediction_file"] = str(pred_csv)
+        round_result["input_rows"] = int(len(early_pred))
+        round_result["round_description"] = f"consume predictions from {Path(pred_csv).name}"
+        results.append(round_result)
         previous_state = results[-1]["state_path"]
+    if results:
+        final_ranking = write_final_posterior_ranking(results[-1]["bounds"], out / "final_posterior_ranking.csv")
+        paper_check = write_paper_top_protocol_check(final_ranking, out / "final_paper_top_protocol_check.csv")
+        results[-1]["final_posterior_ranking"] = final_ranking
+        results[-1]["final_posterior_ranking_path"] = out / "final_posterior_ranking.csv"
+        results[-1]["paper_top_protocol_check"] = paper_check
+        results[-1]["paper_top_protocol_check_path"] = out / "final_paper_top_protocol_check.csv"
     return results
+
+
+def write_final_posterior_ranking(bounds: pd.DataFrame, path: str | Path) -> pd.DataFrame:
+    ranking = bounds.copy()
+    sort_col = "mean_bound" if "mean_bound" in ranking.columns else "posterior_mean"
+    ranking = ranking.sort_values(sort_col, ascending=False).reset_index(drop=True)
+    ranking.insert(0, "final_posterior_rank", np.arange(1, len(ranking) + 1))
+    ranking = ranking.rename(
+        columns={
+            "mean_bound": "final_posterior_mean",
+            "upper_bound": "final_posterior_upper",
+            "lower_bound": "final_posterior_lower",
+        }
+    )
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ranking.to_csv(path, index=False)
+    return ranking
+
+
+def write_paper_top_protocol_check(ranking: pd.DataFrame, path: str | Path) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    top3 = ranking.head(3)[["C1", "C2", "C3", "C4"]].round(3).to_numpy(float).tolist()
+    paper_top = [list(np.round(proto, 3)) for proto in PAPER_TOP_PROTOCOLS]
+    final_top_three_exact_match = top3 == paper_top
+    for c1, c2, c3, c4 in PAPER_TOP_PROTOCOLS:
+        match = ranking[
+            np.isclose(ranking["C1"], c1, atol=1e-3)
+            & np.isclose(ranking["C2"], c2, atol=1e-3)
+            & np.isclose(ranking["C3"], c3, atol=1e-3)
+            & np.isclose(ranking["C4"], c4, atol=1e-3)
+        ]
+        if match.empty:
+            rows.append(
+                {
+                    "protocol": f"{c1:.1f}C-{c2:.1f}C-{c3:.1f}C-{c4:.3f}C",
+                    "C1": c1,
+                    "C2": c2,
+                    "C3": c3,
+                    "C4": c4,
+                    "exists_in_policy_space": False,
+                    "final_posterior_rank": np.nan,
+                    "final_posterior_mean": np.nan,
+                    "final_posterior_uncertainty": np.nan,
+                    "final_top_three_exact_match": final_top_three_exact_match,
+                }
+            )
+            continue
+        row = match.iloc[0]
+        rows.append(
+            {
+                "protocol": f"{c1:.1f}C-{c2:.1f}C-{c3:.1f}C-{c4:.3f}C",
+                "C1": c1,
+                "C2": c2,
+                "C3": c3,
+                "C4": c4,
+                "exists_in_policy_space": True,
+                "final_posterior_rank": int(row["final_posterior_rank"]),
+                "final_posterior_mean": float(row["final_posterior_mean"]),
+                "final_posterior_uncertainty": float(row.get("posterior_half_width", np.nan)),
+                "final_top_three_exact_match": final_top_three_exact_match,
+            }
+        )
+    out = pd.DataFrame(rows)
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    out.to_csv(path, index=False)
+    return out
