@@ -9,8 +9,8 @@ def test_sanitize_metadata_removes_identifiers_and_protocol_by_default():
     df = pd.DataFrame({"row_id": [1], "cell_id": ["c"], "batch_id": ["b"], "cc1": [4.0], "feature": [1.2]})
     out = sanitize_metadata(df)
     assert "row_id" in out
+    assert out["cell_id"].tolist() == ["anon_cell_00000"]
     assert "feature" in out
-    assert "cell_id" not in out
     assert "batch_id" not in out
     assert "cc1" not in out
 

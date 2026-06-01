@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import multiprocessing as mp
+import contextlib
 import traceback
+import types
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -19,6 +22,10 @@ class CandidateRunResult:
     stdout: str = ""
     stderr: str = ""
     error: str | None = None
+    error_type: str | None = None
+    failure_reason: str | None = None
+    traceback: str | None = None
+    syntax_status: str = "unknown"
 
 
 def load_candidate(path: str | Path):
@@ -37,20 +44,34 @@ def load_candidate(path: str | Path):
 
 
 def _worker(queue, path, train_metadata, train_cycle_summary, train_labels, test_metadata, test_cycle_summary, config, forbidden_patterns):
+    stdout_buffer = io.StringIO()
+    stderr_buffer = io.StringIO()
     try:
-        install_open_guard(tuple(forbidden_patterns))
-        candidate = load_candidate(path)
-        if hasattr(candidate, "fit") and hasattr(candidate, "predict"):
-            model = candidate.fit(train_metadata, train_cycle_summary, train_labels, config)
-            pred = candidate.predict(model, test_metadata, test_cycle_summary, config)
-        else:
-            model = candidate.fit(train_metadata, train_cycle_summary, train_labels, config)
-            pred = candidate.predict(test_metadata, test_cycle_summary, config)
-        if not isinstance(pred, pd.DataFrame):
-            pred = pd.DataFrame(pred)
-        queue.put(CandidateRunResult(success=True, predictions=pred))
+        with contextlib.redirect_stdout(stdout_buffer), contextlib.redirect_stderr(stderr_buffer):
+            install_open_guard(tuple(forbidden_patterns))
+            candidate = load_candidate(path)
+            if isinstance(candidate, types.ModuleType):
+                model = candidate.fit(train_metadata, train_cycle_summary, train_labels, config)
+                pred = candidate.predict(model, test_metadata, test_cycle_summary, config)
+            else:
+                model = candidate.fit(train_metadata, train_cycle_summary, train_labels, config)
+                pred = candidate.predict(test_metadata, test_cycle_summary, config)
+            if not isinstance(pred, pd.DataFrame):
+                pred = pd.DataFrame(pred)
+        queue.put(CandidateRunResult(success=True, predictions=pred, stdout=stdout_buffer.getvalue(), stderr=stderr_buffer.getvalue(), syntax_status="passed"))
     except Exception as exc:
-        queue.put(CandidateRunResult(success=False, error=str(exc), stderr=traceback.format_exc()))
+        queue.put(
+            CandidateRunResult(
+                success=False,
+                error=str(exc),
+                error_type=type(exc).__name__,
+                failure_reason=str(exc),
+                traceback=traceback.format_exc(),
+                stdout=stdout_buffer.getvalue(),
+                stderr=stderr_buffer.getvalue(),
+                syntax_status="passed",
+            )
+        )
 
 
 def run_candidate(
@@ -64,7 +85,29 @@ def run_candidate(
     timeout_s: int = 30,
     forbidden_patterns: tuple[str, ...] = FORBIDDEN_PATH_PATTERNS,
 ) -> CandidateRunResult:
-    validate_code_safety(Path(path).read_text())
+    code = Path(path).read_text()
+    try:
+        compile(code, str(path), "exec")
+    except SyntaxError as exc:
+        return CandidateRunResult(
+            success=False,
+            error=str(exc),
+            error_type=type(exc).__name__,
+            failure_reason=str(exc),
+            traceback=traceback.format_exc(),
+            syntax_status="failed",
+        )
+    try:
+        validate_code_safety(code)
+    except Exception as exc:
+        return CandidateRunResult(
+            success=False,
+            error=str(exc),
+            error_type=type(exc).__name__,
+            failure_reason=str(exc),
+            traceback=traceback.format_exc(),
+            syntax_status="passed",
+        )
     ctx = mp.get_context("fork")
     queue = ctx.Queue()
     proc = ctx.Process(
@@ -76,7 +119,9 @@ def run_candidate(
     if proc.is_alive():
         proc.terminate()
         proc.join()
-        return CandidateRunResult(success=False, error=f"candidate timed out after {timeout_s}s")
+        msg = f"candidate timed out after {timeout_s}s"
+        return CandidateRunResult(success=False, error=msg, error_type="TimeoutError", failure_reason=msg, syntax_status="passed")
     if queue.empty():
-        return CandidateRunResult(success=False, error="candidate process produced no result")
+        msg = "candidate process produced no result"
+        return CandidateRunResult(success=False, error=msg, error_type="RuntimeError", failure_reason=msg, syntax_status="passed")
     return queue.get()

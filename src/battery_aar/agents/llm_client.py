@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -9,6 +11,78 @@ class AgentResponse:
     code: str
     prompt: str
     response_text: str
+
+
+@dataclass
+class LLMClientConfig:
+    api_key: str | None
+    base_url: str | None
+    model: str
+    alias: str | None
+    alias_header: str | None
+    extra_headers: dict[str, str]
+
+    @property
+    def default_headers(self) -> dict[str, str]:
+        headers = dict(self.extra_headers)
+        if self.alias and self.alias_header:
+            headers[self.alias_header] = self.alias
+        return headers
+
+    def safe_summary(self) -> dict[str, Any]:
+        return {
+            "api_key_configured": bool(self.api_key),
+            "base_url_configured": bool(self.base_url),
+            "model": self.model,
+            "alias_configured": bool(self.alias),
+            "alias_header_configured": bool(self.alias_header),
+            "extra_headers_configured": bool(self.extra_headers),
+            "default_header_names": sorted(self.default_headers),
+        }
+
+
+def load_llm_client_config(model: str | None = None) -> LLMClientConfig:
+    api_key = (
+        os.getenv("OPEN_BATTERY_AGENTS_API_KEY")
+        or os.getenv("STANFORD_AI_API_KEY")
+        or os.getenv("STANFORD_AI_PLAYGROUND_API_KEY")
+    )
+    base_url = (
+        os.getenv("OPEN_BATTERY_AGENTS_BASE_URL")
+        or os.getenv("STANFORD_AI_BASE_URL")
+        or os.getenv("STANFORD_AI_PLAYGROUND_BASE_URL")
+    )
+    alias = os.getenv("OPEN_BATTERY_AGENTS_ALIAS") or os.getenv("STANFORD_AI_ALIAS")
+    alias_header = os.getenv("OPEN_BATTERY_AGENTS_ALIAS_HEADER")
+    extra_headers = _load_extra_headers()
+    return LLMClientConfig(
+        api_key=api_key,
+        base_url=base_url,
+        model=model or os.getenv("OPEN_BATTERY_AGENTS_MODEL") or "gpt-4o-mini",
+        alias=alias,
+        alias_header=alias_header,
+        extra_headers=extra_headers,
+    )
+
+
+def _load_extra_headers() -> dict[str, str]:
+    raw = os.getenv("OPEN_BATTERY_AGENTS_EXTRA_HEADERS_JSON")
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError("OPEN_BATTERY_AGENTS_EXTRA_HEADERS_JSON must be valid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("OPEN_BATTERY_AGENTS_EXTRA_HEADERS_JSON must decode to a JSON object")
+    headers: dict[str, str] = {}
+    for key, value in parsed.items():
+        if not isinstance(key, str):
+            raise ValueError("OPEN_BATTERY_AGENTS_EXTRA_HEADERS_JSON header names must be strings")
+        if value is None:
+            continue
+        headers[key] = str(value)
+    return headers
 
 
 class OfflineHeuristicAgent:
@@ -23,16 +97,21 @@ class OfflineHeuristicAgent:
 class OpenAICompatibleAgent:
     def __init__(self, agent_id: str, model: str | None = None):
         self.agent_id = agent_id
-        self.api_key = os.getenv("OPEN_BATTERY_AGENTS_API_KEY") or os.getenv("STANFORD_AI_PLAYGROUND_API_KEY")
-        self.base_url = os.getenv("OPEN_BATTERY_AGENTS_BASE_URL") or os.getenv("STANFORD_AI_PLAYGROUND_BASE_URL")
-        self.model = model or os.getenv("OPEN_BATTERY_AGENTS_MODEL") or "gpt-4o-mini"
-        if not self.api_key:
+        self.config = load_llm_client_config(model=model)
+        self.api_key = self.config.api_key
+        self.base_url = self.config.base_url
+        self.model = self.config.model
+        if not self.config.api_key:
             raise RuntimeError("No Open Battery Agents API key found")
 
     def propose(self, prompt: str, iteration: int) -> AgentResponse:
         from openai import OpenAI
 
-        client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+        default_headers = self.config.default_headers
+        client_kwargs: dict[str, Any] = {"api_key": self.config.api_key, "base_url": self.config.base_url}
+        if default_headers:
+            client_kwargs["default_headers"] = default_headers
+        client = OpenAI(**client_kwargs)
         response = client.chat.completions.create(
             model=self.model,
             messages=[
@@ -49,10 +128,14 @@ class OpenAICompatibleAgent:
 def make_agent(agent_id: str, offline: bool, model: str | None = None):
     if offline:
         return OfflineHeuristicAgent(agent_id)
-    api_key = os.getenv("OPEN_BATTERY_AGENTS_API_KEY") or os.getenv("STANFORD_AI_PLAYGROUND_API_KEY")
-    if not api_key:
+    config = load_llm_client_config(model=model)
+    if not config.api_key:
         return OfflineHeuristicAgent(agent_id)
     return OpenAICompatibleAgent(agent_id, model=model)
+
+
+def llm_startup_summary(model: str | None = None) -> dict[str, Any]:
+    return load_llm_client_config(model=model).safe_summary()
 
 
 def _strip_code_fences(text: str) -> str:

@@ -1,0 +1,10 @@
+batch_id,raw_file,cell_id,channel,exclusion_stage,reason
+2018-08-28_oed_0,/Users/sreyavangara/Documents/Research/Code/battery-arr/literature_models_and_data/battery-fast-charging/data/2018-08-28_oed_0/2018-08-28_oed_0_CH17_structure.json,2018-08-28_oed_0_CH17,17,raw_parse,raw cell payload has no summary table
+2018-08-28_oed_0,,2018-08-28_oed_0_CH0,0,raw_match,raw_cell_not_found
+2018-08-28_oed_0,/Users/sreyavangara/Documents/Research/Code/battery-arr/literature_models_and_data/battery-fast-charging/data/2018-08-28_oed_0/2018-08-28_oed_0_CH27_structure.json,2018-08-28_oed_0_CH27,27,raw_parse,raw cell summary has no discharge_capacity
+2018-09-02_oed_1,,2018-09-02_oed_1_CH11,11,label_filter,anomaly_flag_true;prediction_le_0
+2018-09-02_oed_1,,2018-09-02_oed_1_CH0,0,raw_match,raw_cell_not_found
+2018-09-02_oed_1,,2018-09-02_oed_1_CH5,5,raw_match,raw_cell_not_found
+2018-09-06_oed_2,,2018-09-06_oed_2_CH11,11,label_filter,anomaly_flag_true;prediction_le_0
+2018-09-06_oed_2,,2018-09-06_oed_2_CH0,0,raw_match,raw_cell_not_found
+2018-09-10_oed_3,,2018-09-10_oed_3_CH0,0,raw_match,raw_cell_not_found

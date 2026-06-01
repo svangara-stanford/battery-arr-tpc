@@ -2,7 +2,7 @@
   "all_required_model_variables_found": true,
   "author_model_predictions_available": true,
   "author_model_target_transform_requested": "auto",
-  "author_model_validation_metrics_unavailable_batch9_skipped": true,
+  "author_model_validation_metrics_unavailable_batch9_skipped": false,
   "batch_name_mapping": {
     "2018-08-28_oed_0": "oed1",
     "2018-09-02_oed_1": "oed2",
@@ -24,19 +24,19 @@
         {
           "cell_id": "2018-08-28_oed_0_CH17_structure",
           "channel": "17",
-          "path": "/Users/sreyavangara/Documents/Research/Code/battery-arr/literature_models_and_data/battery-fast-charging/data/2018-08-28_oed_0/2018-08-28_oed_0_CH17_structure.json",
-          "reason": "/Users/sreyavangara/Documents/Research/Code/battery-arr/literature_models_and_data/battery-fast-charging/data/2018-08-28_oed_0/2018-08-28_oed_0_CH17_structure.json does not contain summary and cycles_interpolated arrays"
+          "path": "/tmp/tpc-vbwne/oba_attia_12506/battery-fast-charging/data/2018-08-28_oed_0/2018-08-28_oed_0_CH17_structure.json",
+          "reason": "/tmp/tpc-vbwne/oba_attia_12506/battery-fast-charging/data/2018-08-28_oed_0/2018-08-28_oed_0_CH17_structure.json does not contain summary and cycles_interpolated arrays"
         },
         {
           "cell_id": "2018-08-28_oed_0_CH27_structure",
           "channel": "27",
-          "path": "/Users/sreyavangara/Documents/Research/Code/battery-arr/literature_models_and_data/battery-fast-charging/data/2018-08-28_oed_0/2018-08-28_oed_0_CH27_structure.json",
-          "reason": "/Users/sreyavangara/Documents/Research/Code/battery-arr/literature_models_and_data/battery-fast-charging/data/2018-08-28_oed_0/2018-08-28_oed_0_CH27_structure.json does not contain summary.discharge_capacity"
+          "path": "/tmp/tpc-vbwne/oba_attia_12506/battery-fast-charging/data/2018-08-28_oed_0/2018-08-28_oed_0_CH27_structure.json",
+          "reason": "/tmp/tpc-vbwne/oba_attia_12506/battery-fast-charging/data/2018-08-28_oed_0/2018-08-28_oed_0_CH27_structure.json does not contain summary.discharge_capacity"
         }
       ],
       "finite_predictions": 46,
       "folder": "2018-08-28_oed_0",
-      "model_file": "/Users/sreyavangara/Documents/Research/Code/battery-arr/literature_models_and_data/battery-fast-charging/BMS-autoanalysis/oed_model_batch1.mat",
+      "model_file": "/tmp/tpc-vbwne/oba_attia_12506/battery-fast-charging/BMS-autoanalysis/oed_model_batch1.mat",
       "rows": 46,
       "status": "ok",
       "total_raw_cell_files": 48,
@@ -67,7 +67,7 @@
       "excluded_cells": [],
       "finite_predictions": 46,
       "folder": "2018-09-02_oed_1",
-      "model_file": "/Users/sreyavangara/Documents/Research/Code/battery-arr/literature_models_and_data/battery-fast-charging/BMS-autoanalysis/oed_model.mat",
+      "model_file": "/tmp/tpc-vbwne/oba_attia_12506/battery-fast-charging/BMS-autoanalysis/oed_model.mat",
       "rows": 46,
       "status": "ok",
       "total_raw_cell_files": 46,
@@ -98,7 +98,7 @@
       "excluded_cells": [],
       "finite_predictions": 48,
       "folder": "2018-09-06_oed_2",
-      "model_file": "/Users/sreyavangara/Documents/Research/Code/battery-arr/literature_models_and_data/battery-fast-charging/BMS-autoanalysis/oed_model.mat",
+      "model_file": "/tmp/tpc-vbwne/oba_attia_12506/battery-fast-charging/BMS-autoanalysis/oed_model.mat",
       "rows": 48,
       "status": "ok",
       "total_raw_cell_files": 48,
@@ -117,7 +117,7 @@
       "excluded_cells": [],
       "finite_predictions": 48,
       "folder": "2018-09-10_oed_3",
-      "model_file": "/Users/sreyavangara/Documents/Research/Code/battery-arr/literature_models_and_data/battery-fast-charging/BMS-autoanalysis/oed_model.mat",
+      "model_file": "/tmp/tpc-vbwne/oba_attia_12506/battery-fast-charging/BMS-autoanalysis/oed_model.mat",
       "rows": 48,
       "status": "ok",
       "total_raw_cell_files": 48,
@@ -128,35 +128,35 @@
     {
       "consumed_prediction_file": null,
       "input_rows": 0,
-      "output_file": "runs/attia_reference_reproduction/bayesgap/round_0_next_batch.csv",
+      "output_file": "/tmp/tpc-vbwne/oba_attia_12506/runs/attia_reference_reproduction_with_validation/bayesgap/round_0_next_batch.csv",
       "round_description": "generate/select initial batch if needed",
       "round_idx": 0
     },
     {
-      "consumed_prediction_file": "runs/attia_reference_reproduction/early_predictions/2018-08-28_oed_0.csv",
+      "consumed_prediction_file": "/tmp/tpc-vbwne/oba_attia_12506/runs/attia_reference_reproduction_with_validation/early_predictions/2018-08-28_oed_0.csv",
       "input_rows": 46,
-      "output_file": "runs/attia_reference_reproduction/bayesgap/round_1_next_batch.csv",
+      "output_file": "/tmp/tpc-vbwne/oba_attia_12506/runs/attia_reference_reproduction_with_validation/bayesgap/round_1_next_batch.csv",
       "round_description": "consume predictions from 2018-08-28_oed_0.csv",
       "round_idx": 1
     },
     {
-      "consumed_prediction_file": "runs/attia_reference_reproduction/early_predictions/2018-09-02_oed_1.csv",
+      "consumed_prediction_file": "/tmp/tpc-vbwne/oba_attia_12506/runs/attia_reference_reproduction_with_validation/early_predictions/2018-09-02_oed_1.csv",
       "input_rows": 45,
-      "output_file": "runs/attia_reference_reproduction/bayesgap/round_2_next_batch.csv",
+      "output_file": "/tmp/tpc-vbwne/oba_attia_12506/runs/attia_reference_reproduction_with_validation/bayesgap/round_2_next_batch.csv",
       "round_description": "consume predictions from 2018-09-02_oed_1.csv",
       "round_idx": 2
     },
     {
-      "consumed_prediction_file": "runs/attia_reference_reproduction/early_predictions/2018-09-06_oed_2.csv",
+      "consumed_prediction_file": "/tmp/tpc-vbwne/oba_attia_12506/runs/attia_reference_reproduction_with_validation/early_predictions/2018-09-06_oed_2.csv",
       "input_rows": 47,
-      "output_file": "runs/attia_reference_reproduction/bayesgap/round_3_next_batch.csv",
+      "output_file": "/tmp/tpc-vbwne/oba_attia_12506/runs/attia_reference_reproduction_with_validation/bayesgap/round_3_next_batch.csv",
       "round_description": "consume predictions from 2018-09-06_oed_2.csv",
       "round_idx": 3
     },
     {
-      "consumed_prediction_file": "runs/attia_reference_reproduction/early_predictions/2018-09-10_oed_3.csv",
+      "consumed_prediction_file": "/tmp/tpc-vbwne/oba_attia_12506/runs/attia_reference_reproduction_with_validation/early_predictions/2018-09-10_oed_3.csv",
       "input_rows": 48,
-      "output_file": "runs/attia_reference_reproduction/bayesgap/round_4_next_batch.csv",
+      "output_file": "/tmp/tpc-vbwne/oba_attia_12506/runs/attia_reference_reproduction_with_validation/bayesgap/round_4_next_batch.csv",
       "round_description": "consume predictions from 2018-09-10_oed_3.csv",
       "round_idx": 4
     }
@@ -274,11 +274,10 @@
     }
   ],
   "caveats": [
-    "Final top three posterior-mean protocols do not exactly match the paper-reported CLO top protocols; this may reflect implementation differences, exclusion handling, raw-data parsing, or skipped validation.",
-    "Batch 9 validation was skipped by default; no final validation ranking was written."
+    "Final top three posterior-mean protocols do not exactly match the paper-reported CLO top protocols; this may reflect implementation differences, exclusion handling, raw-data parsing, or skipped validation."
   ],
   "exact_author_model_replay": true,
-  "final_posterior_ranking_path": "runs/attia_reference_reproduction/bayesgap/final_posterior_ranking.csv",
+  "final_posterior_ranking_path": "/tmp/tpc-vbwne/oba_attia_12506/runs/attia_reference_reproduction_with_validation/bayesgap/final_posterior_ranking.csv",
   "final_posterior_ranking_top": [
     {
       "C1": 4.4,
@@ -784,7 +783,7 @@
       "protocol": "4.4C-5.6C-5.2C-4.252C"
     }
   ],
-  "paper_top_protocol_check_path": "runs/attia_reference_reproduction/bayesgap/final_paper_top_protocol_check.csv",
+  "paper_top_protocol_check_path": "/tmp/tpc-vbwne/oba_attia_12506/runs/attia_reference_reproduction_with_validation/bayesgap/final_paper_top_protocol_check.csv",
   "prediction_scale_diagnostics": {
     "2018-08-28_oed_0": {
       "chosen_target_transform": "log10_cycle_life",
@@ -829,19 +828,19 @@
     "2018-09-02_oed_1": {
       "chosen_target_transform": "log10_cycle_life",
       "ci_hi": {
-        "max": 2511.3136920568004,
-        "median": 1411.4635726797042,
-        "min": 563.0880033366436
+        "max": 2511.313692056816,
+        "median": 1411.4635726797064,
+        "min": 563.0880033366442
       },
       "ci_lo": {
-        "max": 697.316561882347,
-        "median": 554.9826790918214,
-        "min": 271.7388697571707
+        "max": 697.3165618823456,
+        "median": 554.9826790918206,
+        "min": 271.7388697571704
       },
       "ci_width": {
-        "max": 2085.300655241982,
-        "median": 827.2989169766518,
-        "min": 291.34913357947295
+        "max": 2085.3006552419997,
+        "median": 827.2989169766549,
+        "min": 291.3491335794738
       },
       "inverse_ten_power_raw_output": {
         "max": 0.0025564422135579408,
@@ -862,30 +861,30 @@
       },
       "ten_power_raw_output": {
         "max": 1092.5530557782965,
-        "median": 885.4284738497562,
+        "median": 885.4284738497561,
         "min": 391.16863064479173
       }
     },
     "2018-09-06_oed_2": {
       "chosen_target_transform": "log10_cycle_life",
       "ci_hi": {
-        "max": 5495.199382542949,
-        "median": 1071.3506063612956,
+        "max": 5495.199382543039,
+        "median": 1071.350606361299,
         "min": 504.56162913544483
       },
       "ci_lo": {
-        "max": 689.1941948942815,
-        "median": 507.47881781256535,
-        "min": 43.142823959983225
+        "max": 689.1941948942808,
+        "median": 507.47881781256456,
+        "min": 43.14282395998288
       },
       "ci_width": {
-        "max": 5440.407179174811,
-        "median": 542.5741995160965,
+        "max": 5440.407179174902,
+        "median": 542.5741995160975,
         "min": 212.4678542300154
       },
       "inverse_ten_power_raw_output": {
-        "max": 0.005531092381925146,
-        "median": 0.001437397914262525,
+        "max": 0.0055310923819251465,
+        "median": 0.0014373979142625255,
         "min": 0.0009538875434178999
       },
       "n_ci_width_gt_2000": 1,
@@ -902,26 +901,26 @@
       },
       "ten_power_raw_output": {
         "max": 1048.3416068280683,
-        "median": 695.7170168256686,
-        "min": 180.79611240410003
+        "median": 695.7170168256685,
+        "min": 180.7961124041
       }
     },
     "2018-09-10_oed_3": {
       "chosen_target_transform": "log10_cycle_life",
       "ci_hi": {
-        "max": 2457.3770194147737,
-        "median": 1540.4421178393006,
-        "min": 770.9029808587244
+        "max": 2457.377019414786,
+        "median": 1540.4421178393038,
+        "min": 770.9029808587252
       },
       "ci_lo": {
-        "max": 771.30902852599,
-        "median": 616.0981086813842,
-        "min": 351.22788877754454
+        "max": 771.3090285259884,
+        "median": 616.0981086813828,
+        "min": 351.2278887775442
       },
       "ci_width": {
-        "max": 1958.0394953012428,
-        "median": 911.8261422780212,
-        "min": 419.67509208117986
+        "max": 1958.0394953012578,
+        "median": 911.8261422780247,
+        "min": 419.675092081181
       },
       "inverse_ten_power_raw_output": {
         "max": 0.001921788724344272,
@@ -947,13 +946,253 @@
       }
     }
   },
-  "prediction_scale_diagnostics_path": "runs/attia_reference_reproduction/model_diagnostics/prediction_scale_diagnostics.json",
+  "prediction_scale_diagnostics_path": "/tmp/tpc-vbwne/oba_attia_12506/runs/attia_reference_reproduction_with_validation/model_diagnostics/prediction_scale_diagnostics.json",
   "status": "exact_author_model_replay",
-  "validation_metrics": null,
-  "validation_metrics_path": null,
-  "validation_protocol_ranking_path": null,
-  "validation_protocol_ranking_top": [],
-  "validation_status": "skipped_batch9_missing",
-  "validation_status_label": "validation_skipped_batch9_missing",
-  "validation_summary": null
+  "validation_metrics": {
+    "early_prediction_vs_observed": {
+      "kendall": 0.28888888888888886,
+      "mae": 42.763330796116605,
+      "n": 10,
+      "pearson": 0.9008195405175659,
+      "rmse": 61.76959433613852
+    },
+    "posterior_vs_observed": {
+      "kendall": 0.5555555555555556,
+      "mae": 73.94970925925928,
+      "n": 9,
+      "pearson": 0.7809235211556285,
+      "rmse": 86.42652872646057
+    },
+    "protocol_level_rows_used": 9,
+    "validation_cells_parsed": 46,
+    "validation_protocols_parsed": 10
+  },
+  "validation_metrics_path": "/tmp/tpc-vbwne/oba_attia_12506/runs/attia_reference_reproduction_with_validation/validation_metrics.json",
+  "validation_protocol_ranking_path": "/tmp/tpc-vbwne/oba_attia_12506/runs/attia_reference_reproduction_with_validation/validation_protocol_ranking.csv",
+  "validation_protocol_ranking_top": [
+    {
+      "C1": NaN,
+      "C2": NaN,
+      "C3": NaN,
+      "C4": NaN,
+      "author_early_prediction_cell_count": 3,
+      "author_early_prediction_mean": 846.4553199560502,
+      "author_early_prediction_median": 939.9143955911501,
+      "early_prediction_minus_observed": -68.54468004394982,
+      "exists_in_final_posterior": false,
+      "final_posterior_lower": NaN,
+      "final_posterior_mean": NaN,
+      "final_posterior_rank": NaN,
+      "final_posterior_upper": NaN,
+      "observed_cycle_life_mean": 915.0,
+      "observed_cycle_life_median": 995.0,
+      "observed_protocol_rank": 1,
+      "posterior_half_width": NaN,
+      "posterior_minus_observed": NaN,
+      "validation_cell_count": 4
+    },
+    {
+      "C1": 4.4,
+      "C2": 5.6,
+      "C3": 5.2,
+      "C4": 4.252,
+      "author_early_prediction_cell_count": 5,
+      "author_early_prediction_mean": 759.3948525988244,
+      "author_early_prediction_median": 824.8783859082978,
+      "early_prediction_minus_observed": -149.93848073450897,
+      "exists_in_final_posterior": true,
+      "final_posterior_lower": 913.883,
+      "final_posterior_mean": 925.98485,
+      "final_posterior_rank": 3.0,
+      "final_posterior_upper": 938.0867,
+      "observed_cycle_life_mean": 909.3333333333334,
+      "observed_cycle_life_median": 923.5,
+      "observed_protocol_rank": 2,
+      "posterior_half_width": 12.101849999999956,
+      "posterior_minus_observed": 16.65151666666668,
+      "validation_cell_count": 6
+    },
+    {
+      "C1": 6.0,
+      "C2": 5.6,
+      "C3": 4.4,
+      "C4": 3.834,
+      "author_early_prediction_cell_count": 5,
+      "author_early_prediction_mean": 848.0686281489368,
+      "author_early_prediction_median": 847.3469495458022,
+      "early_prediction_minus_observed": -53.13137185106325,
+      "exists_in_final_posterior": true,
+      "final_posterior_lower": 762.9591,
+      "final_posterior_mean": 788.6295,
+      "final_posterior_rank": 97.0,
+      "final_posterior_upper": 814.2999,
+      "observed_cycle_life_mean": 901.2,
+      "observed_cycle_life_median": 843.0,
+      "observed_protocol_rank": 3,
+      "posterior_half_width": 25.670399999999972,
+      "posterior_minus_observed": -112.57050000000004,
+      "validation_cell_count": 5
+    },
+    {
+      "C1": 7.0,
+      "C2": 4.8,
+      "C3": 4.8,
+      "C4": 3.652,
+      "author_early_prediction_cell_count": 5,
+      "author_early_prediction_mean": 862.8683208440114,
+      "author_early_prediction_median": 904.1495366601704,
+      "early_prediction_minus_observed": -33.931679155988604,
+      "exists_in_final_posterior": true,
+      "final_posterior_lower": 710.8511,
+      "final_posterior_mean": 739.4359999999999,
+      "final_posterior_rank": 147.0,
+      "final_posterior_upper": 768.0209,
+      "observed_cycle_life_mean": 896.8,
+      "observed_cycle_life_median": 896.0,
+      "observed_protocol_rank": 4,
+      "posterior_half_width": 28.584900000000005,
+      "posterior_minus_observed": -157.36400000000003,
+      "validation_cell_count": 5
+    },
+    {
+      "C1": 5.2,
+      "C2": 5.2,
+      "C3": 4.8,
+      "C4": 4.16,
+      "author_early_prediction_cell_count": 4,
+      "author_early_prediction_mean": 871.6894560675471,
+      "author_early_prediction_median": 841.3281346480544,
+      "early_prediction_minus_observed": 0.6894560675470984,
+      "exists_in_final_posterior": true,
+      "final_posterior_lower": 876.8008,
+      "final_posterior_mean": 890.1992,
+      "final_posterior_rank": 25.0,
+      "final_posterior_upper": 903.5976,
+      "observed_cycle_life_mean": 871.0,
+      "observed_cycle_life_median": 881.5,
+      "observed_protocol_rank": 5,
+      "posterior_half_width": 13.398400000000038,
+      "posterior_minus_observed": 19.19920000000002,
+      "validation_cell_count": 4
+    },
+    {
+      "C1": 4.8,
+      "C2": 5.2,
+      "C3": 5.2,
+      "C4": 4.16,
+      "author_early_prediction_cell_count": 3,
+      "author_early_prediction_mean": 871.2837034116427,
+      "author_early_prediction_median": 854.8171052043791,
+      "early_prediction_minus_observed": 14.950370078309334,
+      "exists_in_final_posterior": true,
+      "final_posterior_lower": 900.4774,
+      "final_posterior_mean": 912.83875,
+      "final_posterior_rank": 6.0,
+      "final_posterior_upper": 925.2001,
+      "observed_cycle_life_mean": 856.3333333333334,
+      "observed_cycle_life_median": 886.0,
+      "observed_protocol_rank": 6,
+      "posterior_half_width": 12.361350000000016,
+      "posterior_minus_observed": 56.50541666666663,
+      "validation_cell_count": 3
+    },
+    {
+      "C1": 3.6,
+      "C2": 6.0,
+      "C3": 5.6,
+      "C4": 4.755,
+      "author_early_prediction_cell_count": 4,
+      "author_early_prediction_mean": 858.2559806311758,
+      "author_early_prediction_median": 861.6769604489315,
+      "early_prediction_minus_observed": 79.25598063117582,
+      "exists_in_final_posterior": true,
+      "final_posterior_lower": 880.1091,
+      "final_posterior_mean": 900.63705,
+      "final_posterior_rank": 16.0,
+      "final_posterior_upper": 921.165,
+      "observed_cycle_life_mean": 779.0,
+      "observed_cycle_life_median": 778.0,
+      "observed_protocol_rank": 7,
+      "posterior_half_width": 20.527949999999976,
+      "posterior_minus_observed": 121.63705000000004,
+      "validation_cell_count": 5
+    },
+    {
+      "C1": 8.0,
+      "C2": 4.4,
+      "C3": 4.4,
+      "C4": 3.94,
+      "author_early_prediction_cell_count": 5,
+      "author_early_prediction_mean": 744.7850947464524,
+      "author_early_prediction_median": 710.3372291876545,
+      "early_prediction_minus_observed": 21.785094746452387,
+      "exists_in_final_posterior": true,
+      "final_posterior_lower": 639.6095,
+      "final_posterior_mean": 672.79515,
+      "final_posterior_rank": 202.0,
+      "final_posterior_upper": 705.9808,
+      "observed_cycle_life_mean": 723.0,
+      "observed_cycle_life_median": 735.0,
+      "observed_protocol_rank": 8,
+      "posterior_half_width": 33.18565000000001,
+      "posterior_minus_observed": -50.204849999999965,
+      "validation_cell_count": 5
+    },
+    {
+      "C1": 8.0,
+      "C2": 6.0,
+      "C3": 4.8,
+      "C4": 3.0,
+      "author_early_prediction_cell_count": 4,
+      "author_early_prediction_mean": 603.2647425548093,
+      "author_early_prediction_median": 608.4402094409627,
+      "early_prediction_minus_observed": -0.9852574451906548,
+      "exists_in_final_posterior": true,
+      "final_posterior_lower": 627.8938,
+      "final_posterior_mean": 670.4974,
+      "final_posterior_rank": 204.0,
+      "final_posterior_upper": 713.101,
+      "observed_cycle_life_mean": 604.25,
+      "observed_cycle_life_median": 606.5,
+      "observed_protocol_rank": 9,
+      "posterior_half_width": 42.60359999999997,
+      "posterior_minus_observed": 66.24739999999997,
+      "validation_cell_count": 4
+    },
+    {
+      "C1": 8.0,
+      "C2": 7.0,
+      "C3": 5.2,
+      "C4": 2.68,
+      "author_early_prediction_cell_count": 5,
+      "author_early_prediction_mean": 504.3790627930199,
+      "author_early_prediction_median": 470.57163827702493,
+      "early_prediction_minus_observed": -4.420937206980113,
+      "exists_in_final_posterior": true,
+      "final_posterior_lower": 546.7534,
+      "final_posterior_mean": 573.9674500000001,
+      "final_posterior_rank": 224.0,
+      "final_posterior_upper": 601.1815,
+      "observed_cycle_life_mean": 508.8,
+      "observed_cycle_life_median": 491.0,
+      "observed_protocol_rank": 10,
+      "posterior_half_width": 27.214049999999986,
+      "posterior_minus_observed": 65.16745000000009,
+      "validation_cell_count": 5
+    }
+  ],
+  "validation_status": "included_validation_batch",
+  "validation_status_label": "validation_included_batch9",
+  "validation_summary": {
+    "batch_path": "/tmp/tpc-vbwne/oba_attia_12506/battery-fast-charging/data/2019-01-24_batch9",
+    "cells_parsed": 46,
+    "excluded_cells": [],
+    "protocol_level_rows_used": 9,
+    "raw_files_discovered": 46,
+    "status": "ok",
+    "validation_metrics_path": "/tmp/tpc-vbwne/oba_attia_12506/runs/attia_reference_reproduction_with_validation/validation_metrics.json",
+    "validation_predictions_rich_path": "/tmp/tpc-vbwne/oba_attia_12506/runs/attia_reference_reproduction_with_validation/validation/batch9_predictions_rich.csv",
+    "validation_protocol_ranking_path": "/tmp/tpc-vbwne/oba_attia_12506/runs/attia_reference_reproduction_with_validation/validation_protocol_ranking.csv",
+    "validation_protocols_parsed": 10
+  }
 }

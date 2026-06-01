@@ -1,0 +1,99 @@
+{
+  "batch9_included": false,
+  "batch9_role": "locked_final_validation_only",
+  "batches": [
+    {
+      "batch_id": "2018-08-28_oed_0",
+      "excluded_cells": 3,
+      "included_cells": 43,
+      "prediction_file": "runs/attia_reference_reproduction_with_validation/early_predictions_rich/2018-08-28_oed_0.csv",
+      "raw_files_discovered": 48,
+      "valid_label_rows": 46
+    },
+    {
+      "batch_id": "2018-09-02_oed_1",
+      "excluded_cells": 3,
+      "included_cells": 43,
+      "prediction_file": "runs/attia_reference_reproduction_with_validation/early_predictions_rich/2018-09-02_oed_1.csv",
+      "raw_files_discovered": 46,
+      "valid_label_rows": 45
+    },
+    {
+      "batch_id": "2018-09-06_oed_2",
+      "excluded_cells": 2,
+      "included_cells": 46,
+      "prediction_file": "runs/attia_reference_reproduction_with_validation/early_predictions_rich/2018-09-06_oed_2.csv",
+      "raw_files_discovered": 48,
+      "valid_label_rows": 47
+    },
+    {
+      "batch_id": "2018-09-10_oed_3",
+      "excluded_cells": 1,
+      "included_cells": 47,
+      "prediction_file": "runs/attia_reference_reproduction_with_validation/early_predictions_rich/2018-09-10_oed_3.csv",
+      "raw_files_discovered": 48,
+      "valid_label_rows": 48
+    }
+  ],
+  "charge_capacity_status": "available",
+  "columns": {
+    "cell_metadata": [
+      "row_id",
+      "cell_id",
+      "anonymized_cell_id",
+      "batch_id",
+      "protocol_readable",
+      "C1",
+      "C2",
+      "C3",
+      "C4",
+      "cycle_life",
+      "label_source",
+      "source_cell_id",
+      "source_path"
+    ],
+    "cycle_summary": [
+      "row_id",
+      "cell_id",
+      "cycle_index",
+      "discharge_capacity",
+      "charge_capacity",
+      "discharge_energy",
+      "charge_energy",
+      "dc_internal_resistance",
+      "temperature_maximum",
+      "temperature_average",
+      "temperature_minimum",
+      "energy_efficiency",
+      "charge_throughput",
+      "energy_throughput",
+      "charge_duration",
+      "time_temperature_integrated",
+      "paused"
+    ],
+    "splits": [
+      "row_id",
+      "split"
+    ]
+  },
+  "dataset_type": "attia_oed_author_model_surrogate",
+  "exclusion_counts_by_reason": {
+    "anomaly_flag_true;prediction_le_0": 2,
+    "raw cell payload has no summary table": 1,
+    "raw cell summary has no discharge_capacity": 1,
+    "raw_cell_not_found": 5
+  },
+  "exclusion_counts_by_stage": {
+    "label_filter": 2,
+    "raw_match": 5,
+    "raw_parse": 2
+  },
+  "first_n_cycles": 100,
+  "label_source": "author_model_prediction",
+  "n_cells": 179,
+  "n_cycle_rows": 17900,
+  "n_exclusions": 9,
+  "skipped_label_rows": 2,
+  "skipped_raw_cells": 7,
+  "surrogate_label_notice": "cycle_life is the author-model early prediction for OED/CLO cells, not true final measured lifetime."
+}

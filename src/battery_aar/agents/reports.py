@@ -40,6 +40,9 @@ def write_agent_reports(report: dict[str, Any], reports_dir: str | Path) -> None
         "# Open Battery Agents Rediscovery",
         "",
         f"mode: `{report.get('mode')}`",
+        f"real_data_used: `{report.get('real_data_used')}`",
+        f"synthetic_fallback_used: `{report.get('synthetic_fallback_used')}`",
+        f"label_source: `{report.get('label_source')}`",
         f"split_mode: `{report.get('split_mode')}`",
         f"batch9_status: `{report.get('batch9_status')}`",
         f"author_model_predictions_available: `{report.get('author_model_predictions_available')}`",
@@ -51,12 +54,40 @@ def write_agent_reports(report: dict[str, Any], reports_dir: str | Path) -> None
         "",
         "## Best Candidate",
         f"- candidate: `{report.get('best_candidate')}`",
-        f"- validation RMSE: `{report.get('best_metrics', {}).get('rmse')}`",
-        f"- Battery-PGR against author model: `{report.get('best_metrics', {}).get('pgr_author_model')}`",
+        f"- surrogate search validation RMSE: `{report.get('best_metrics', {}).get('rmse')}`",
+        f"- surrogate search Battery-PGR against author model: `{report.get('best_metrics', {}).get('pgr_author_model')}`",
         f"- post-hoc feature-family overlap: `{', '.join(report.get('posthoc_feature_overlap', []))}`",
         "",
-        "## Caveats",
     ]
+    final_metrics = report.get("final_batch9_metrics") or {}
+    author_metrics = report.get("author_literature_batch9_metrics") or {}
+    if report.get("final_batch9_validation"):
+        lines.extend(
+            [
+                "## Locked Batch 9 Validation",
+                f"- status: `{report.get('final_batch9_validation', {}).get('status')}`",
+                f"- best agent Batch 9 RMSE: `{final_metrics.get('rmse')}`",
+                f"- best agent Batch 9 MAE: `{final_metrics.get('mae')}`",
+                f"- author/literature model Batch 9 RMSE: `{author_metrics.get('author_model_batch9_rmse')}`",
+                f"- Battery-PGR on Batch 9: `{final_metrics.get('battery_pgr_author_model_batch9')}`",
+                "",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "## Locked Batch 9 Validation",
+                "- not run",
+                "",
+            ]
+        )
+    failures = report.get("candidate_failures", [])
+    if report.get("best_candidate") is None and failures:
+        lines.extend(["## Candidate Failures", ""])
+        for failure in failures:
+            lines.append(f"- `{failure.get('error_type')}` x{failure.get('count')}: {failure.get('failure_reason')}")
+        lines.append("")
+    lines.append("## Caveats")
     for caveat in report.get("caveats", []):
         lines.append(f"- {caveat}")
     (out / "agent_rediscovery.md").write_text("\n".join(lines) + "\n")

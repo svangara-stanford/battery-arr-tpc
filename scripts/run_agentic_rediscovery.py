@@ -21,6 +21,10 @@ def main() -> int:
     parser.add_argument("--allow-protocol-features", action="store_true")
     parser.add_argument("--max-cycle", type=int, default=100)
     parser.add_argument("--locked-test", action="store_true")
+    parser.add_argument("--require-real-data", action="store_true")
+    parser.add_argument("--final-batch9-validation", action="store_true")
+    parser.add_argument("--battery-fast-charging-root", type=Path, default=None)
+    parser.add_argument("--batch9-path", type=Path, default=None)
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
     run_rediscovery(
@@ -37,6 +41,10 @@ def main() -> int:
         max_cycle=args.max_cycle,
         locked_test=args.locked_test,
         seed=args.seed,
+        require_real_data=args.require_real_data,
+        final_batch9_validation=args.final_batch9_validation,
+        battery_fast_charging_root=args.battery_fast_charging_root,
+        batch9_path=args.batch9_path,
     )
     return 0
 

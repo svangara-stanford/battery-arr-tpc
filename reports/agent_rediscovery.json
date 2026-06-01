@@ -1,33 +1,82 @@
 {
-  "author_model_predictions_available": true,
-  "author_model_validation_metrics_unavailable_batch9_skipped": true,
-  "batch9_status": "skipped_not_required",
-  "best_candidate": "runs/open_battery_agents/offline_smoke/candidates/agent_0_iter_0.py",
-  "best_metrics": {
-    "kendall": 0.19999999999999998,
-    "mae": 242.8175367385246,
-    "pgr_author_model": null,
-    "r2": 0.0058764315573609505,
-    "rmse": 294.3715475592552,
-    "spearman": 0.2647058823529412
+  "author_literature_batch9_metrics": {
+    "author_model_batch9_mae": 42.763330796116605,
+    "author_model_batch9_rmse": 61.76959433613852,
+    "available": true,
+    "path": "runs/attia_reference_reproduction_with_validation/validation_metrics.json",
+    "posterior_batch9_rmse": 86.42652872646057,
+    "raw": {
+      "early_prediction_vs_observed": {
+        "kendall": 0.28888888888888886,
+        "mae": 42.763330796116605,
+        "n": 10,
+        "pearson": 0.9008195405175659,
+        "rmse": 61.76959433613852
+      },
+      "posterior_vs_observed": {
+        "kendall": 0.5555555555555556,
+        "mae": 73.94970925925928,
+        "n": 9,
+        "pearson": 0.7809235211556285,
+        "rmse": 86.42652872646057
+      },
+      "protocol_level_rows_used": 9,
+      "validation_cells_parsed": 46,
+      "validation_protocols_parsed": 10
+    }
   },
+  "author_model_predictions_available": true,
+  "author_model_validation_metrics_unavailable_batch9_skipped": false,
+  "batch9_status": "skipped_not_required",
+  "best_candidate": "runs/open_battery_agents/real_surrogate_llm_demo/candidates/agent_0_iter_2.py",
+  "best_metrics": {
+    "kendall": -0.04201680672268907,
+    "mae": 147.19369418255442,
+    "pgr_author_model": 0.000693307802812019,
+    "r2": -0.07002244331627039,
+    "rmse": 178.42658743072016,
+    "spearman": -0.05994397759103642
+  },
+  "candidate_failures": [
+    {
+      "count": 2,
+      "error_type": "KeyError",
+      "failure_reason": "\"None of ['anon_cell_00000', 'anon_cell_00001', 'anon_cell_00002', 'anon_cell_00003', 'anon_cell_00004', 'anon_cell_00005', 'anon_cell_00006', 'anon_cell_00010', 'anon_cell_00011', 'anon_cell_00012', 'anon_cell_00014', 'anon_cell_00015', 'anon_cell_00016', 'anon_cell_00017', 'anon_cell_00018', 'anon_cell_00019', 'anon_cell_00020', 'anon_cell_00021', 'anon_cell_00022', 'anon_cell_00025', 'anon_cell_00026', 'anon_cell_00027', 'anon_cell_00029', 'anon_cell_00030', 'anon_cell_00032', 'anon_cell_00033', 'anon_cell_00034', 'anon_cell_00037', 'anon_cell_00038', 'anon_cell_00039', 'anon_cell_00040', 'anon_cell_00042', 'anon_cell_00043', 'anon_cell_00044', 'anon_cell_00045', 'anon_cell_00048', 'anon_cell_00049', 'anon_cell_00050', 'anon_cell_00051', 'anon_cell_00052', 'anon_cell_00053', 'anon_cell_00054', 'anon_cell_00055', 'anon_cell_00056', 'anon_cell_00057', 'anon_cell_00058', 'anon_cell_00059', 'anon_cell_00060', 'anon_cell_00061', 'anon_cell_00063', 'anon_cell_00064', 'anon_cell_00066', 'anon_cell_00067', 'anon_cell_00070', 'anon_cell_00071', 'anon_cell_00072', 'anon_cell_00074', 'anon_cell_00075', 'anon_cell_00076', 'anon_cell_00078', 'anon_cell_00079', 'anon_cell_00081', 'anon_cell_00082', 'anon_cell_00083', 'anon_cell_00086', 'anon_cell_00088', 'anon_cell_00089', 'anon_cell_00090', 'anon_cell_00091', 'anon_cell_00093', 'anon_cell_00094', 'anon_cell_00095', 'anon_cell_00096', 'anon_cell_00097', 'anon_cell_00099', 'anon_cell_00100', 'anon_cell_00101', 'anon_cell_00102', 'anon_cell_00103', 'anon_cell_00104', 'anon_cell_00105', 'anon_cell_00107', 'anon_cell_00108', 'anon_cell_00111', 'anon_cell_00112', 'anon_cell_00115', 'anon_cell_00116', 'anon_cell_00117', 'anon_cell_00118', 'anon_cell_00119', 'anon_cell_00120', 'anon_cell_00122', 'anon_cell_00123', 'anon_cell_00125', 'anon_cell_00126', 'anon_cell_00127', 'anon_cell_00130', 'anon_cell_00131', 'anon_cell_00133', 'anon_cell_00134', 'anon_cell_00135', 'anon_cell_00136', 'anon_cell_00137', 'anon_cell_00138', 'anon_cell_00139', 'anon_cell_00140', 'anon_cell_00141'] are in the columns\""
+    }
+  ],
   "caveats": [
     "Batch 9 is not required for this rediscovery run.",
     "Battery-PGR against the author model is undefined unless exact author validation RMSE is available.",
-    "Synthetic/demo data are used when processed local data files are absent."
+    "Synthetic/demo data are used only when processed local data files are absent and --require-real-data is not set.",
+    "Surrogate-label search performance on OED/CLO batches is distinct from locked Batch 9 final validation."
   ],
-  "data_source": "synthetic_demo",
-  "exact_author_model_rmse": null,
+  "data_source": "processed_real",
+  "exact_author_model_rmse": 61.76959433613852,
+  "final_batch9_metrics": null,
+  "final_batch9_validation": null,
+  "label_source": "author_model_prediction",
   "labels_hidden": [
     "validation",
     "test"
   ],
-  "mode": "offline",
+  "llm_client": {
+    "alias_configured": true,
+    "alias_header_configured": false,
+    "api_key_configured": true,
+    "base_url_configured": true,
+    "default_header_names": [],
+    "extra_headers_configured": false,
+    "model": "gpt-4.1"
+  },
+  "mode": "llm_driven",
   "posthoc_feature_overlap": [
+    "difference between cycle 10 and cycle N curves",
     "early discharge capacity",
-    "late-cycle capacity slope",
-    "max early capacity change"
+    "late-cycle capacity slope"
   ],
+  "real_data_used": true,
+  "require_real_data": true,
   "split_mode": "random",
-  "weak_baseline_rmse": 296.0292049921881
+  "synthetic_fallback_used": false,
+  "weak_baseline_rmse": 178.50752274737178
 }
