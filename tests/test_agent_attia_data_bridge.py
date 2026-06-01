@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from battery_aar.agents.attia_data_bridge import build_agent_surrogate_dataset, load_author_validation_metrics
+from battery_aar.agents.evaluator import battery_pgr
 from battery_aar.agents.orchestrator import run_rediscovery
 from battery_aar.paper_reproduction.paths import OED_BATCH_NAMES
 
@@ -286,9 +287,42 @@ def test_final_batch9_validation_writes_outputs_and_does_not_change_leaderboard(
     assert (tmp_path / "run_final" / "final_batch9_predictions.csv").exists()
     assert (tmp_path / "run_final" / "final_batch9_metrics.json").exists()
     assert (tmp_path / "run_final" / "final_batch9_protocol_metrics.csv").exists()
+    split_assignments = pd.read_csv(tmp_path / "run_final" / "split_assignments.csv")
+    assert "2019-01-24_batch9" not in set(split_assignments.get("batch_id", pd.Series(dtype=str)).astype(str))
+    assert report["batch9_status"] == "locked_validation_ok"
     assert report["final_batch9_validation"]["status"] == "ok"
+    assert report["locked_batch9_rmse"] == report["final_batch9_metrics"]["rmse"]
+    assert report["locked_batch9_weak_baseline_rmse"] == report["final_batch9_metrics"]["batch9_weak_baseline_rmse"]
+    assert report["author_literature_batch9_rmse"] == 150.0
     assert report["final_batch9_metrics"]["author_model_batch9_rmse"] == 150.0
-    assert report["final_batch9_metrics"]["battery_pgr_author_model_batch9"] is not None
+    expected_pgr = battery_pgr(
+        report["locked_batch9_weak_baseline_rmse"],
+        report["locked_batch9_rmse"],
+        report["author_literature_batch9_rmse"],
+    )
+    assert report["final_batch9_metrics"]["battery_pgr_author_model_batch9"] == expected_pgr
+    assert report["batch9_pgr"] == expected_pgr
+
+    summary = pd.read_csv(tmp_path / "reports" / "agent_rediscovery_runs_summary.csv")
+    assert set(summary["run_id"]) == {"run_no_final", "run_final"}
+    row = summary.set_index("run_id").loc["run_final"]
+    assert row["split_mode"] == "random"
+    assert row["agents"] == 1
+    assert row["iterations"] == 1
+    assert np.isfinite(row["surrogate_rmse"])
+    assert row["batch9_rmse"] == report["locked_batch9_rmse"]
+    assert row["batch9_weak_rmse"] == report["locked_batch9_weak_baseline_rmse"]
+    assert row["author_rmse"] == 150.0
+    assert row["pgr"] == expected_pgr
+
+    report_md = (tmp_path / "reports" / "agent_rediscovery.md").read_text()
+    assert "batch9_status: `locked_validation_ok`" in report_md
+    assert "surrogate-search validation RMSE" in report_md
+    assert "best agent locked Batch 9 RMSE" in report_md
+    assert "author/literature model Batch 9 RMSE" in report_md
+    assert "Batch 9 weak baseline RMSE" in report_md
+    assert "Batch 9 was not used during surrogate search" in report_md
+    assert "## Run Comparison" in report_md
 
 
 def test_author_validation_metrics_load_and_missing_pgr_is_undefined(tmp_path):

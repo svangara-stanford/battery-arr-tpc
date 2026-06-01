@@ -18,6 +18,9 @@ def main() -> int:
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--model", default=None)
     parser.add_argument("--split-mode", choices=["random", "protocol", "batch", "leave_one_batch_out"], default="random")
+    parser.add_argument("--validation-fraction", type=float, default=0.25)
+    parser.add_argument("--split-seed", type=int, default=0)
+    parser.add_argument("--validation-batch-id", default=None)
     parser.add_argument("--allow-protocol-features", action="store_true")
     parser.add_argument("--max-cycle", type=int, default=100)
     parser.add_argument("--locked-test", action="store_true")
@@ -37,6 +40,9 @@ def main() -> int:
         offline=args.offline,
         model=args.model,
         split_mode=args.split_mode,
+        validation_fraction=args.validation_fraction,
+        split_seed=args.split_seed,
+        validation_batch_id=args.validation_batch_id,
         allow_protocol_features=args.allow_protocol_features,
         max_cycle=args.max_cycle,
         locked_test=args.locked_test,

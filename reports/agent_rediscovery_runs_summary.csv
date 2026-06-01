@@ -1,0 +1,3 @@
+run_id,split_mode,agents,iterations,best_candidate,surrogate_rmse,batch9_rmse,batch9_weak_rmse,author_rmse,pgr
+batch_split_smoke,batch,1,2,runs/open_battery_agents/batch_split_smoke/candidates/agent_0_iter_0.py,227.55588364475844,,,61.76959433613852,
+protocol_split_smoke,protocol,1,2,runs/open_battery_agents/protocol_split_smoke/candidates/agent_0_iter_1.py,197.0849275948976,,,61.76959433613852,
