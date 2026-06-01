@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from .attia_data_bridge import load_author_validation_metrics, load_batch9_holdout
+from .baseline_candidates import author_inspired_baseline_candidates
 from .evaluator import HiddenEvaluator, battery_pgr, evaluate_candidate_train_test, regression_metrics
 from .llm_client import llm_startup_summary, make_agent
 from .memory import append_event
@@ -336,6 +337,77 @@ def _protocol_metrics(predictions: pd.DataFrame, metadata: pd.DataFrame) -> tupl
     return grouped, {"protocol_level_rmse": metrics["rmse"], "protocol_level_mae": metrics["mae"], "n_protocols": int(len(grouped))}
 
 
+def _safe_stem(path: str | Path) -> str:
+    text = Path(path).stem
+    return "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in text)
+
+
+def _candidate_model_class(code: str) -> str:
+    lowered = code.lower()
+    for label, token in [
+        ("GradientBoostingRegressor", "gradientboostingregressor"),
+        ("RandomForestRegressor", "randomforestregressor"),
+        ("ElasticNet", "elasticnet"),
+        ("Ridge", "ridge"),
+        ("LinearRegression", "linearregression"),
+    ]:
+        if token in lowered:
+            return label
+    if "candidatemodel" in lowered:
+        return "CandidateModel"
+    return "unknown"
+
+
+def _candidate_feature_families(code: str) -> list[str]:
+    families = set(posthoc_feature_overlap(code))
+    lowered = code.lower()
+    if "build_all_battery_features" in lowered or "battery_lifetime_features" in lowered:
+        families.update(
+            {
+                "early discharge capacity",
+                "late-cycle capacity slope",
+                "difference between cycle 10 and cycle N curves",
+                "log-transformed curve statistics",
+            }
+        )
+    if "protocol" in lowered or "c1" in lowered or "cc1" in lowered:
+        families.add("protocol current features")
+    return sorted(families)
+
+
+def _write_candidate_feature_summary(
+    leaderboard: pd.DataFrame,
+    out: Path,
+    locked_batch9_by_candidate: dict[str, dict[str, Any]] | None = None,
+) -> pd.DataFrame:
+    locked_batch9_by_candidate = locked_batch9_by_candidate or {}
+    rows: list[dict[str, Any]] = []
+    if leaderboard.empty or "candidate_path" not in leaderboard.columns:
+        summary = pd.DataFrame()
+        summary.to_csv(out / "candidate_feature_summary.csv", index=False)
+        return summary
+    for _, row in leaderboard.iterrows():
+        path = Path(str(row.get("candidate_path")))
+        code = path.read_text() if path.exists() else ""
+        batch9_metrics = locked_batch9_by_candidate.get(str(path), {})
+        rows.append(
+            {
+                "candidate_path": str(path),
+                "agent_id": row.get("agent_id"),
+                "iteration": row.get("iteration"),
+                "success": bool(row.get("success")),
+                "model_class": _candidate_model_class(code),
+                "used_toolbox": "build_all_battery_features" in code or "battery_lifetime_features" in code,
+                "feature_families": "; ".join(_candidate_feature_families(code)),
+                "surrogate_rmse": row.get("rmse"),
+                "locked_batch9_rmse": batch9_metrics.get("rmse"),
+            }
+        )
+    summary = pd.DataFrame(rows)
+    summary.to_csv(out / "candidate_feature_summary.csv", index=False)
+    return summary
+
+
 def run_rediscovery(
     processed_dir: str | Path,
     reference_run: str | Path | None,
@@ -357,6 +429,8 @@ def run_rediscovery(
     final_batch9_validation: bool = False,
     battery_fast_charging_root: str | Path | None = None,
     batch9_path: str | Path | None = None,
+    seed_with_author_inspired_baselines: bool = False,
+    final_batch9_top_k: int = 0,
 ) -> dict[str, Any]:
     out = Path(out)
     run_id = out.name or "open_battery_agents_run"
@@ -391,6 +465,31 @@ def run_rediscovery(
 
     leaderboard_rows: list[dict[str, Any]] = []
     event_path = out / "events.jsonl"
+    if seed_with_author_inspired_baselines:
+        for baseline in author_inspired_baseline_candidates():
+            candidate_path = cand_dir / f"{baseline.name}.py"
+            candidate_path.write_text(baseline.code)
+            result = evaluator.evaluate_candidate(candidate_path)
+            row = {
+                "agent_id": "author_inspired_baseline",
+                "iteration": -1,
+                "candidate_name": baseline.name,
+                "candidate_path": str(candidate_path),
+                "success": bool(result.get("success")),
+                "candidate_syntax_status": result.get("candidate_syntax_status"),
+                "stdout": result.get("stdout"),
+                "stderr": result.get("stderr"),
+            }
+            if result.get("success"):
+                row.update(result["metrics"])
+            else:
+                row["error"] = result.get("error")
+                row["error_type"] = result.get("error_type")
+                row["failure_reason"] = result.get("failure_reason") or result.get("error")
+                row["traceback"] = result.get("traceback")
+            leaderboard_rows.append(row)
+            append_event(event_path, {**row, "baseline_candidate": baseline.name})
+
     agent_objs = [make_agent(f"agent_{i}", offline=offline, model=model) for i in range(agents)]
     for iteration in range(iterations):
         leaderboard_text = pd.DataFrame(leaderboard_rows).tail(10).to_string(index=False) if leaderboard_rows else "No prior candidates."
@@ -442,16 +541,19 @@ def run_rediscovery(
             grouped = grouped.sort_values("count", ascending=False)
             failure_summary = grouped.head(10).to_dict(orient="records")
 
+    locked_batch9_by_candidate: dict[str, dict[str, Any]] = {}
+    locked_batch9_predictions_by_candidate: dict[str, pd.DataFrame] = {}
     final_batch9: dict[str, Any] | None = None
     final_batch9_metrics: dict[str, Any] | None = None
     batch9_status = "skipped_not_required"
-    if final_batch9_validation:
+    final_batch9_topk: dict[str, Any] | None = None
+    if final_batch9_validation or final_batch9_top_k > 0:
         final_batch9 = {"status": "not_run"}
         try:
             if best_candidate is None:
                 raise RuntimeError("No successful candidate is available for locked Batch 9 validation")
             if battery_fast_charging_root is None and batch9_path is None:
-                raise ValueError("--final-batch9-validation requires --battery-fast-charging-root or --batch9-path")
+                raise ValueError("locked Batch 9 validation requires --battery-fast-charging-root or --batch9-path")
             holdout_meta, holdout_cycles, holdout_labels = load_batch9_holdout(
                 battery_fast_charging_root=battery_fast_charging_root,
                 batch9_path=batch9_path,
@@ -465,50 +567,101 @@ def run_rediscovery(
             holdout_cycles["row_id"] = holdout_cycles["row_id"].astype(int) + row_offset
             holdout_labels["row_id"] = holdout_labels["row_id"].astype(int) + row_offset
             batch9_weak_rmse = weak_baseline_rmse_against(labels, holdout_labels)
-            final_result = evaluate_candidate_train_test(
-                best_candidate,
-                metadata,
-                cycles,
-                labels,
-                holdout_meta,
-                holdout_cycles,
-                holdout_labels,
-                weak_rmse=batch9_weak_rmse,
-                strong_rmse=author_validation.get("author_model_batch9_rmse"),
-                allow_protocol_features=allow_protocol_features,
-                max_cycle=max_cycle,
-                return_predictions=True,
-            )
-            if not final_result.get("success"):
-                raise RuntimeError(final_result.get("failure_reason") or final_result.get("error") or "Batch 9 candidate evaluation failed")
-            predictions = final_result["predictions"].merge(holdout_meta, on="row_id", how="left")
-            predictions.to_csv(out / "final_batch9_predictions.csv", index=False)
-            protocol_df, protocol_metric_subset = _protocol_metrics(final_result["predictions"], holdout_meta)
-            protocol_df.to_csv(out / "final_batch9_protocol_metrics.csv", index=False)
-            final_batch9_metrics = dict(final_result["metrics"])
-            final_batch9_metrics.update(protocol_metric_subset)
-            final_batch9_metrics["batch9_weak_baseline_rmse"] = batch9_weak_rmse
-            final_batch9_metrics["author_model_batch9_rmse"] = author_validation.get("author_model_batch9_rmse")
-            final_batch9_metrics["author_model_batch9_mae"] = author_validation.get("author_model_batch9_mae")
-            final_batch9_metrics["battery_pgr_author_model_batch9"] = battery_pgr(
-                batch9_weak_rmse,
-                final_batch9_metrics.get("rmse"),
-                author_validation.get("author_model_batch9_rmse"),
-            )
-            (out / "final_batch9_metrics.json").write_text(json.dumps(final_batch9_metrics, indent=2, default=str, sort_keys=True) + "\n")
-            final_batch9 = {
-                "status": "ok",
-                "n_cells": int(len(holdout_labels)),
-                "predictions_path": str(out / "final_batch9_predictions.csv"),
-                "metrics_path": str(out / "final_batch9_metrics.json"),
-                "protocol_metrics_path": str(out / "final_batch9_protocol_metrics.csv"),
-            }
-            batch9_status = "locked_validation_ok"
-            append_event(event_path, {"final_batch9_validation": final_batch9, "metrics": final_batch9_metrics, "candidate_path": best_candidate})
+
+            def evaluate_locked_candidate(candidate_path: str | Path) -> tuple[dict[str, Any], pd.DataFrame, pd.DataFrame]:
+                result = evaluate_candidate_train_test(
+                    candidate_path,
+                    metadata,
+                    cycles,
+                    labels,
+                    holdout_meta,
+                    holdout_cycles,
+                    holdout_labels,
+                    weak_rmse=batch9_weak_rmse,
+                    strong_rmse=author_validation.get("author_model_batch9_rmse"),
+                    allow_protocol_features=allow_protocol_features,
+                    max_cycle=max_cycle,
+                    return_predictions=True,
+                )
+                if not result.get("success"):
+                    raise RuntimeError(result.get("failure_reason") or result.get("error") or "Batch 9 candidate evaluation failed")
+                protocol_df, protocol_metric_subset = _protocol_metrics(result["predictions"], holdout_meta)
+                metrics = dict(result["metrics"])
+                metrics.update(protocol_metric_subset)
+                metrics["batch9_weak_baseline_rmse"] = batch9_weak_rmse
+                metrics["author_model_batch9_rmse"] = author_validation.get("author_model_batch9_rmse")
+                metrics["author_model_batch9_mae"] = author_validation.get("author_model_batch9_mae")
+                metrics["battery_pgr_author_model_batch9"] = battery_pgr(
+                    batch9_weak_rmse,
+                    metrics.get("rmse"),
+                    author_validation.get("author_model_batch9_rmse"),
+                )
+                return metrics, result["predictions"].merge(holdout_meta, on="row_id", how="left"), protocol_df
+
+            if final_batch9_validation:
+                final_batch9_metrics, predictions, protocol_df = evaluate_locked_candidate(best_candidate)
+                locked_batch9_by_candidate[str(best_candidate)] = final_batch9_metrics
+                locked_batch9_predictions_by_candidate[str(best_candidate)] = predictions
+                predictions.to_csv(out / "final_batch9_predictions.csv", index=False)
+                protocol_df.to_csv(out / "final_batch9_protocol_metrics.csv", index=False)
+                (out / "final_batch9_metrics.json").write_text(json.dumps(final_batch9_metrics, indent=2, default=str, sort_keys=True) + "\n")
+                final_batch9 = {
+                    "status": "ok",
+                    "n_cells": int(len(holdout_labels)),
+                    "predictions_path": str(out / "final_batch9_predictions.csv"),
+                    "metrics_path": str(out / "final_batch9_metrics.json"),
+                    "protocol_metrics_path": str(out / "final_batch9_protocol_metrics.csv"),
+                }
+                batch9_status = "locked_validation_ok"
+                append_event(event_path, {"final_batch9_validation": final_batch9, "metrics": final_batch9_metrics, "candidate_path": best_candidate})
+
+            if final_batch9_top_k > 0:
+                topk_dir = out / "final_batch9_topk_predictions"
+                topk_dir.mkdir(parents=True, exist_ok=True)
+                topk_rows: list[dict[str, Any]] = []
+                top_successes = successes.sort_values("rmse").head(int(final_batch9_top_k))
+                for rank, (_, candidate_row) in enumerate(top_successes.iterrows(), start=1):
+                    candidate_path = str(candidate_row["candidate_path"])
+                    if candidate_path in locked_batch9_by_candidate:
+                        metrics = locked_batch9_by_candidate[candidate_path]
+                        predictions = locked_batch9_predictions_by_candidate[candidate_path]
+                    else:
+                        metrics, predictions, _protocol_df = evaluate_locked_candidate(candidate_path)
+                        locked_batch9_by_candidate[candidate_path] = metrics
+                        locked_batch9_predictions_by_candidate[candidate_path] = predictions
+                    predictions.to_csv(topk_dir / f"rank_{rank:02d}_{_safe_stem(candidate_path)}.csv", index=False)
+                    topk_rows.append(
+                        {
+                            "rank_by_surrogate_rmse": rank,
+                            "candidate_path": candidate_path,
+                            "candidate_name": candidate_row.get("candidate_name"),
+                            "surrogate_rmse": candidate_row.get("rmse"),
+                            "batch9_rmse": metrics.get("rmse"),
+                            "batch9_mae": metrics.get("mae"),
+                            "batch9_pgr": metrics.get("battery_pgr_author_model_batch9"),
+                        }
+                    )
+                topk_metrics = pd.DataFrame(topk_rows)
+                topk_metrics.to_csv(out / "final_batch9_topk_metrics.csv", index=False)
+                final_batch9_topk = {
+                    "status": "ok",
+                    "k": int(final_batch9_top_k),
+                    "metrics_path": str(out / "final_batch9_topk_metrics.csv"),
+                    "predictions_dir": str(topk_dir),
+                }
+                append_event(event_path, {"final_batch9_topk": final_batch9_topk})
+            if not final_batch9_validation:
+                final_batch9 = None
         except Exception as exc:
             final_batch9 = {"status": "failed", "error": str(exc)}
             batch9_status = "locked_validation_failed"
             append_event(event_path, {"final_batch9_validation": final_batch9, "candidate_path": best_candidate})
+
+    candidate_feature_summary = _write_candidate_feature_summary(
+        leaderboard,
+        out,
+        locked_batch9_by_candidate=locked_batch9_by_candidate,
+    )
 
     report = {
         "run_id": run_id,
@@ -544,7 +697,12 @@ def run_rediscovery(
         "best_metrics": best_metrics,
         "final_batch9_validation": final_batch9,
         "final_batch9_metrics": final_batch9_metrics,
+        "final_batch9_top_k": final_batch9_top_k,
+        "final_batch9_topk": final_batch9_topk,
         "candidate_failures": failure_summary,
+        "candidate_feature_summary_path": str(out / "candidate_feature_summary.csv"),
+        "candidate_feature_summary_rows": int(len(candidate_feature_summary)),
+        "seed_with_author_inspired_baselines": seed_with_author_inspired_baselines,
         "posthoc_feature_overlap": overlap,
         "caveats": [
             "Batch 9 is not required for this rediscovery run.",

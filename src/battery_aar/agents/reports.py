@@ -135,6 +135,7 @@ def write_agent_reports(report: dict[str, Any], reports_dir: str | Path) -> None
         f"validation_fraction: `{report.get('validation_fraction')}`",
         f"split_seed: `{report.get('split_seed')}`",
         f"batch9_status: `{report.get('batch9_status')}`",
+        f"seed_with_author_inspired_baselines: `{report.get('seed_with_author_inspired_baselines')}`",
         f"author_model_predictions_available: `{report.get('author_model_predictions_available')}`",
         f"author_model_validation_metrics_unavailable_batch9_skipped: `{report.get('author_model_validation_metrics_unavailable_batch9_skipped')}`",
         "",
@@ -159,6 +160,7 @@ def write_agent_reports(report: dict[str, Any], reports_dir: str | Path) -> None
         f"- surrogate-search validation RMSE: `{report.get('surrogate_search_validation_rmse')}`",
         f"- surrogate search Battery-PGR against author model: `{report.get('best_metrics', {}).get('pgr_author_model')}`",
         f"- post-hoc feature-family overlap: `{', '.join(report.get('posthoc_feature_overlap', []))}`",
+        f"- candidate feature summary: `{report.get('candidate_feature_summary_path')}`",
         "",
     ]
     final_metrics = report.get("final_batch9_metrics") or {}
@@ -201,6 +203,16 @@ def write_agent_reports(report: dict[str, Any], reports_dir: str | Path) -> None
             [
                 "## Locked Batch 9 Validation",
                 "- not run",
+                "",
+            ]
+        )
+    if report.get("final_batch9_topk"):
+        lines.extend(
+            [
+                "## Locked Batch 9 Top-K Analysis",
+                f"- k: `{report.get('final_batch9_top_k')}`",
+                f"- metrics: `{report.get('final_batch9_topk', {}).get('metrics_path')}`",
+                f"- predictions: `{report.get('final_batch9_topk', {}).get('predictions_dir')}`",
                 "",
             ]
         )

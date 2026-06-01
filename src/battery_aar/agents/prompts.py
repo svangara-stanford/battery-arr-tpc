@@ -13,6 +13,12 @@ or a CandidateModel class with fit and predict methods.
 
 Use only numpy, pandas, scipy, and sklearn. Do not use internet access. Do not
 use identifiers, batch artifacts, file ordering, or hidden labels as predictors.
+You may import and use the provided battery feature toolbox:
+
+from battery_aar.features.battery_lifetime_features import build_all_battery_features
+
+Example:
+X = build_all_battery_features(metadata, cycle_summary, max_cycle={max_cycle}, include_protocol=True)
 
 Candidate-facing data schema:
 - train_metadata columns: row_id, cell_id, then allowed physical/protocol metadata columns only.
@@ -36,7 +42,15 @@ all-NaN in some datasets; prefer discharge_capacity features when
 charge_capacity is unavailable. Drop all-NaN feature columns or impute numeric
 features safely inside a sklearn pipeline.
 
-Prefer physically interpretable early-cycle capacity and trend features.
+Strong candidates should try author-inspired, physically interpretable
+early-cycle feature families: capacity at cycles 10 and {max_cycle}, capacity
+slope, late-cycle slope, cycle-N minus cycle-10 differences, and log-transformed
+difference statistics, including energy-like integral changes when available.
+Do not use row_id, cell_id, source paths, batch_id, or
+other identifiers as model features. Protocol currents are available only when
+the run explicitly allows protocol features; otherwise they will be absent from
+candidate-facing metadata. For small datasets, prefer Ridge, ElasticNet,
+RandomForest, or GradientBoosting over neural networks.
 
 Previous validation feedback:
 {leaderboard}
