@@ -136,6 +136,8 @@ def write_agent_reports(report: dict[str, Any], reports_dir: str | Path) -> None
         f"split_seed: `{report.get('split_seed')}`",
         f"batch9_status: `{report.get('batch9_status')}`",
         f"seed_with_author_inspired_baselines: `{report.get('seed_with_author_inspired_baselines')}`",
+        f"emit_artifact_trace: `{report.get('emit_artifact_trace')}`",
+        f"artifact_index_path: `{report.get('artifact_index_path')}`",
         f"author_model_predictions_available: `{report.get('author_model_predictions_available')}`",
         f"author_model_validation_metrics_unavailable_batch9_skipped: `{report.get('author_model_validation_metrics_unavailable_batch9_skipped')}`",
         "",

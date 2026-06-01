@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 from pathlib import Path
@@ -342,6 +343,13 @@ def _safe_stem(path: str | Path) -> str:
     return "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in text)
 
 
+def _sha256_file(path: str | Path) -> str | None:
+    source = Path(path)
+    if not source.exists():
+        return None
+    return hashlib.sha256(source.read_bytes()).hexdigest()
+
+
 def _candidate_model_class(code: str) -> str:
     lowered = code.lower()
     for label, token in [
@@ -431,12 +439,90 @@ def run_rediscovery(
     batch9_path: str | Path | None = None,
     seed_with_author_inspired_baselines: bool = False,
     final_batch9_top_k: int = 0,
+    emit_artifact_trace: bool = False,
 ) -> dict[str, Any]:
     out = Path(out)
     run_id = out.name or "open_battery_agents_run"
     cand_dir = out / "candidates"
     cand_dir.mkdir(parents=True, exist_ok=True)
+    artifact_store = None
+    trace_logger = None
+    artifact_classes: dict[str, Any] = {}
+    run_manifest_artifact_id: str | None = None
+    dataset_profile_artifact_id: str | None = None
+    split_artifact_id: str | None = None
+    candidate_artifact_ids_by_path: dict[str, str] = {}
+    if emit_artifact_trace:
+        from battery_aar.workflows.artifacts import ArtifactStore, build_dataset_profile_artifact, build_split_artifact
+        from battery_aar.workflows.schemas import AgentRole, CandidateSpec, EvaluationReport, ExperimentState, RunManifest
+        from battery_aar.workflows.trace import TraceLogger
+
+        artifact_store = ArtifactStore(out, run_id=run_id)
+        trace_logger = TraceLogger(artifact_store.artifact_dir, run_id=run_id)
+        artifact_classes = {
+            "AgentRole": AgentRole,
+            "CandidateSpec": CandidateSpec,
+            "EvaluationReport": EvaluationReport,
+            "ExperimentState": ExperimentState,
+            "RunManifest": RunManifest,
+            "build_dataset_profile_artifact": build_dataset_profile_artifact,
+            "build_split_artifact": build_split_artifact,
+        }
+        run_manifest = RunManifest(
+            run_id=run_id,
+            output_dir=str(out),
+            human_readable_summary=f"Open Battery Agents rediscovery run {run_id}.",
+            config={
+                "processed_dir": str(processed_dir),
+                "reference_run": str(reference_run) if reference_run is not None else None,
+                "agents": agents,
+                "iterations": iterations,
+                "offline": offline,
+                "model": model,
+                "split_mode": split_mode,
+                "validation_fraction": validation_fraction,
+                "split_seed": split_seed,
+                "validation_batch_id": validation_batch_id,
+                "allow_protocol_features": allow_protocol_features,
+                "max_cycle": max_cycle,
+                "locked_test": locked_test,
+                "seed": seed,
+                "require_real_data": require_real_data,
+                "final_batch9_validation": final_batch9_validation,
+                "final_batch9_top_k": final_batch9_top_k,
+                "seed_with_author_inspired_baselines": seed_with_author_inspired_baselines,
+            },
+        )
+        artifact_store.write_artifact(run_manifest)
+        run_manifest_artifact_id = run_manifest.artifact_id
+        trace_logger.log_event(
+            event_type="run_started",
+            iteration=None,
+            agent_role=AgentRole.ORCHESTRATOR,
+            output_artifact_ids=[run_manifest.artifact_id],
+            success=True,
+        )
     metadata, cycles, labels, data_source, dataset_card, _split_table = load_processed_or_synthetic(processed_dir, seed, max_cycle, require_real_data=require_real_data)
+    label_source = dataset_card.get("label_source") or (metadata["label_source"].dropna().iloc[0] if "label_source" in metadata and not metadata["label_source"].dropna().empty else None)
+    if emit_artifact_trace and artifact_store is not None:
+        dataset_profile = artifact_classes["build_dataset_profile_artifact"](
+            run_id=run_id,
+            metadata=metadata,
+            cycle_summary=cycles,
+            labels=labels,
+            data_source=data_source,
+            label_source=label_source,
+            parent_artifact_ids=[run_manifest_artifact_id] if run_manifest_artifact_id else [],
+        )
+        artifact_store.write_artifact(dataset_profile)
+        dataset_profile_artifact_id = dataset_profile.artifact_id
+        trace_logger.log_event(
+            event_type="dataset_profiled",
+            agent_role=artifact_classes["AgentRole"].DATASET_PROFILER,
+            input_artifact_ids=[run_manifest_artifact_id] if run_manifest_artifact_id else [],
+            output_artifact_ids=[dataset_profile.artifact_id],
+            success=True,
+        )
     train_ids, val_ids, test_ids, split_manifest, split_assignments = make_search_split(
         metadata=metadata,
         labels=labels,
@@ -447,6 +533,22 @@ def run_rediscovery(
     )
     split_assignments.to_csv(out / "split_assignments.csv", index=False)
     (out / "split_manifest.json").write_text(json.dumps(split_manifest, indent=2, default=str, sort_keys=True) + "\n")
+    if emit_artifact_trace and artifact_store is not None:
+        split_artifact = artifact_classes["build_split_artifact"](
+            run_id=run_id,
+            split_manifest=split_manifest,
+            assignments_path=out / "split_assignments.csv",
+            parent_artifact_ids=[artifact_id for artifact_id in [dataset_profile_artifact_id] if artifact_id],
+        )
+        artifact_store.write_artifact(split_artifact)
+        split_artifact_id = split_artifact.artifact_id
+        trace_logger.log_event(
+            event_type="split_created",
+            agent_role=artifact_classes["AgentRole"].SPLIT_MANAGER,
+            input_artifact_ids=[dataset_profile_artifact_id] if dataset_profile_artifact_id else [],
+            output_artifact_ids=[split_artifact.artifact_id],
+            success=True,
+        )
     weak_rmse = weak_baseline_rmse(labels, train_ids, val_ids)
     ref = read_reference_status(reference_run)
     author_validation = load_author_validation_metrics(reference_run)
@@ -462,6 +564,117 @@ def run_rediscovery(
         allow_protocol_features=allow_protocol_features,
         max_cycle=max_cycle,
     )
+
+    def emit_candidate_artifacts(
+        *,
+        agent_id: str,
+        iteration: int,
+        candidate_path: Path,
+        result: dict[str, Any],
+        candidate_name: str | None = None,
+        agent_role: Any | None = None,
+        response_summary: str | None = None,
+    ) -> tuple[str | None, str | None]:
+        if not emit_artifact_trace or artifact_store is None:
+            return None, None
+        AgentRole = artifact_classes["AgentRole"]
+        CandidateSpec = artifact_classes["CandidateSpec"]
+        role = agent_role or AgentRole.LLM_CANDIDATE
+        code = candidate_path.read_text() if candidate_path.exists() else ""
+        candidate_id = f"{agent_id}_iter_{iteration}_{candidate_name or candidate_path.stem}"
+        spec = CandidateSpec(
+            run_id=run_id,
+            parent_artifact_ids=[artifact_id for artifact_id in [split_artifact_id] if artifact_id],
+            human_readable_summary=f"Candidate specification for {candidate_name or candidate_path.stem}.",
+            candidate_id=candidate_id,
+            agent_id=agent_id,
+            agent_role=role,
+            iteration=iteration,
+            candidate_path=str(candidate_path),
+            candidate_name=candidate_name,
+            code_sha256=_sha256_file(candidate_path),
+            uses_toolbox="build_all_battery_features" in code or "battery_lifetime_features" in code,
+            declared_dependencies=[dep for dep in ["numpy", "pandas", "scipy", "sklearn", "battery_aar.features"] if dep in code],
+        )
+        artifact_store.write_artifact(spec)
+        candidate_artifact_ids_by_path[str(candidate_path)] = spec.artifact_id
+        eval_id = emit_evaluation_artifact(
+            candidate_path=candidate_path,
+            result=result,
+            candidate_id=candidate_id,
+            agent_id=agent_id,
+            iteration=iteration,
+            candidate_name=candidate_name,
+            parent_artifact_ids=[spec.artifact_id],
+            locked_batch9_validation_run=False,
+        )
+        trace_logger.log_event(
+            event_type="candidate_evaluated",
+            iteration=iteration,
+            agent_role=role,
+            input_artifact_ids=[split_artifact_id] if split_artifact_id else [],
+            output_artifact_ids=[artifact_id for artifact_id in [spec.artifact_id, eval_id] if artifact_id],
+            success=bool(result.get("success")),
+            error_type=result.get("error_type"),
+            error_message=result.get("failure_reason") or result.get("error"),
+        )
+        if response_summary is not None:
+            trace_logger.log_agent_message(
+                event_type="candidate_response",
+                iteration=iteration,
+                agent_role=role,
+                agent_id=agent_id,
+                input_artifact_ids=[split_artifact_id] if split_artifact_id else [],
+                output_artifact_ids=[spec.artifact_id],
+                success=True,
+                message_summary=response_summary[:1000],
+            )
+        return spec.artifact_id, eval_id
+
+    def emit_evaluation_artifact(
+        *,
+        candidate_path: str | Path,
+        result: dict[str, Any],
+        candidate_id: str,
+        agent_id: str | None,
+        iteration: int | None,
+        candidate_name: str | None = None,
+        parent_artifact_ids: list[str] | None = None,
+        locked_batch9_validation_run: bool = False,
+    ) -> str | None:
+        if not emit_artifact_trace or artifact_store is None:
+            return None
+        EvaluationReport = artifact_classes["EvaluationReport"]
+        metrics = result.get("metrics") or {}
+        pgr_value = metrics.get("pgr_author_model")
+        if pgr_value is None:
+            pgr_value = metrics.get("battery_pgr_author_model_batch9")
+        report = EvaluationReport(
+            run_id=run_id,
+            parent_artifact_ids=parent_artifact_ids or [],
+            human_readable_summary=f"Evaluation report for {candidate_name or Path(candidate_path).stem}.",
+            candidate_id=candidate_id,
+            candidate_path=str(candidate_path),
+            agent_id=agent_id,
+            candidate_name=candidate_name,
+            iteration=iteration,
+            split_mode=split_mode,
+            locked_batch9_validation_run=locked_batch9_validation_run,
+            success=bool(result.get("success")),
+            rmse=metrics.get("rmse"),
+            mae=metrics.get("mae"),
+            r2=metrics.get("r2"),
+            spearman=metrics.get("spearman"),
+            kendall=metrics.get("kendall"),
+            pgr=pgr_value,
+            failure_reason=result.get("failure_reason") or result.get("error"),
+            traceback=result.get("traceback"),
+            stdout_excerpt=(result.get("stdout") or "")[:2000],
+            stderr_excerpt=(result.get("stderr") or "")[:2000],
+            extra_metrics={k: v for k, v in metrics.items() if k not in {"rmse", "mae", "r2", "spearman", "kendall", "pgr_author_model"}},
+        )
+        artifact_store.write_artifact(report)
+        return report.artifact_id
 
     leaderboard_rows: list[dict[str, Any]] = []
     event_path = out / "events.jsonl"
@@ -489,6 +702,14 @@ def run_rediscovery(
                 row["traceback"] = result.get("traceback")
             leaderboard_rows.append(row)
             append_event(event_path, {**row, "baseline_candidate": baseline.name})
+            emit_candidate_artifacts(
+                agent_id="author_inspired_baseline",
+                iteration=-1,
+                candidate_path=candidate_path,
+                result=result,
+                candidate_name=baseline.name,
+                agent_role=artifact_classes["AgentRole"].BASELINE if emit_artifact_trace else None,
+            )
 
     agent_objs = [make_agent(f"agent_{i}", offline=offline, model=model) for i in range(agents)]
     for iteration in range(iterations):
@@ -517,6 +738,15 @@ def run_rediscovery(
                 row["traceback"] = result.get("traceback")
             leaderboard_rows.append(row)
             append_event(event_path, {**row, "prompt": prompt, "response": response.response_text})
+            emit_candidate_artifacts(
+                agent_id=agent.agent_id,
+                iteration=iteration,
+                candidate_path=candidate_path,
+                result=result,
+                candidate_name=None,
+                agent_role=artifact_classes["AgentRole"].LLM_CANDIDATE if emit_artifact_trace else None,
+                response_summary=response.response_text,
+            )
 
     leaderboard = pd.DataFrame(leaderboard_rows)
     leaderboard.to_csv(out / "leaderboard.csv", index=False)
@@ -540,6 +770,16 @@ def run_rediscovery(
             grouped = failures.groupby(["error_type", "failure_reason"], dropna=False).size().reset_index(name="count")
             grouped = grouped.sort_values("count", ascending=False)
             failure_summary = grouped.head(10).to_dict(orient="records")
+
+    def candidate_name_for_path(candidate_path: str | Path) -> str | None:
+        if leaderboard.empty or "candidate_path" not in leaderboard.columns:
+            return Path(candidate_path).stem
+        matches = leaderboard[leaderboard["candidate_path"].astype(str) == str(candidate_path)]
+        if not matches.empty and "candidate_name" in matches.columns:
+            value = matches.iloc[0].get("candidate_name")
+            if pd.notna(value):
+                return str(value)
+        return Path(candidate_path).stem
 
     locked_batch9_by_candidate: dict[str, dict[str, Any]] = {}
     locked_batch9_predictions_by_candidate: dict[str, pd.DataFrame] = {}
@@ -596,6 +836,28 @@ def run_rediscovery(
                     metrics.get("rmse"),
                     author_validation.get("author_model_batch9_rmse"),
                 )
+                candidate_path_text = str(candidate_path)
+                candidate_name = candidate_name_for_path(candidate_path_text)
+                parent_ids = [candidate_artifact_ids_by_path[candidate_path_text]] if candidate_path_text in candidate_artifact_ids_by_path else []
+                eval_id = emit_evaluation_artifact(
+                    candidate_path=candidate_path_text,
+                    result={"success": True, "metrics": metrics},
+                    candidate_id=f"locked_batch9_{_safe_stem(candidate_path_text)}",
+                    agent_id=None,
+                    iteration=None,
+                    candidate_name=candidate_name,
+                    parent_artifact_ids=parent_ids,
+                    locked_batch9_validation_run=True,
+                )
+                if trace_logger is not None:
+                    trace_logger.log_event(
+                        event_type="locked_batch9_candidate_evaluated",
+                        iteration=None,
+                        agent_role=artifact_classes["AgentRole"].EVALUATOR,
+                        input_artifact_ids=parent_ids,
+                        output_artifact_ids=[eval_id] if eval_id else [],
+                        success=True,
+                    )
                 return metrics, result["predictions"].merge(holdout_meta, on="row_id", how="left"), protocol_df
 
             if final_batch9_validation:
@@ -662,6 +924,38 @@ def run_rediscovery(
         out,
         locked_batch9_by_candidate=locked_batch9_by_candidate,
     )
+    experiment_state_artifact_id: str | None = None
+    if emit_artifact_trace and artifact_store is not None:
+        ExperimentState = artifact_classes["ExperimentState"]
+        experiment_state = ExperimentState(
+            run_id=run_id,
+            parent_artifact_ids=[artifact_id for artifact_id in [run_manifest_artifact_id, dataset_profile_artifact_id, split_artifact_id] if artifact_id],
+            human_readable_summary=f"Experiment state for run {run_id}: {int(len(successes))} successful candidates.",
+            status="completed",
+            completed_iterations=int(iterations),
+            candidate_count=int(len(leaderboard)),
+            successful_candidate_count=int(len(successes)),
+            best_candidate_path=best_candidate,
+            best_metrics=best_metrics,
+            leaderboard_path=str(out / "leaderboard.csv"),
+            artifact_index_path=str(artifact_store.index_path),
+            output_paths={
+                "leaderboard": str(out / "leaderboard.csv"),
+                "candidate_feature_summary": str(out / "candidate_feature_summary.csv"),
+                "final_batch9_predictions": str(out / "final_batch9_predictions.csv") if (out / "final_batch9_predictions.csv").exists() else "",
+                "final_batch9_metrics": str(out / "final_batch9_metrics.json") if (out / "final_batch9_metrics.json").exists() else "",
+            },
+        )
+        artifact_store.write_artifact(experiment_state)
+        experiment_state_artifact_id = experiment_state.artifact_id
+        trace_logger.log_event(
+            event_type="run_completed",
+            iteration=None,
+            agent_role=artifact_classes["AgentRole"].ORCHESTRATOR,
+            input_artifact_ids=[artifact_id for artifact_id in [run_manifest_artifact_id, dataset_profile_artifact_id, split_artifact_id] if artifact_id],
+            output_artifact_ids=[experiment_state.artifact_id],
+            success=True,
+        )
 
     report = {
         "run_id": run_id,
@@ -703,6 +997,9 @@ def run_rediscovery(
         "candidate_feature_summary_path": str(out / "candidate_feature_summary.csv"),
         "candidate_feature_summary_rows": int(len(candidate_feature_summary)),
         "seed_with_author_inspired_baselines": seed_with_author_inspired_baselines,
+        "emit_artifact_trace": emit_artifact_trace,
+        "artifact_index_path": str(artifact_store.index_path) if artifact_store is not None else None,
+        "experiment_state_artifact_id": experiment_state_artifact_id,
         "posthoc_feature_overlap": overlap,
         "caveats": [
             "Batch 9 is not required for this rediscovery run.",

@@ -1,0 +1,152 @@
+{
+  "artifact_index_path": "runs/open_battery_agents/v2_role_graph_smoke/artifacts/index.json",
+  "candidate_path": "runs/open_battery_agents/v2_role_graph_smoke/candidates/role_graph_iter_000.py",
+  "critique_summary": "ScientistCritic summarized the candidate evaluation.",
+  "iterations": 1,
+  "n_train_cells": 134,
+  "n_validation_cells": 45,
+  "offline": true,
+  "out": "runs/open_battery_agents/v2_role_graph_smoke",
+  "reports_dir": "reports",
+  "review_verdict": "pass",
+  "role_sequence": [
+    "DatasetProfiler",
+    "FeatureScientist",
+    "ModelArchitect",
+    "CodeGenerator",
+    "CodeReviewer",
+    "Evaluator",
+    "ScientistCritic"
+  ],
+  "run_id": "v2_role_graph_smoke",
+  "split_assignments_path": "runs/open_battery_agents/v2_role_graph_smoke/split_assignments.csv",
+  "split_manifest_path": "runs/open_battery_agents/v2_role_graph_smoke/split_manifest.json",
+  "split_mode": "random",
+  "split_seed": 0,
+  "tool_calls": [
+    {
+      "agent_role": "dataset_profiler",
+      "arguments_summary": {
+        "request_sha256": "147d81aa5e9c285d0c1fe54f62800b7d3317eedaf486536298b418a7ba662358"
+      },
+      "duration_ms": 38.84808300063014,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_284fdab963544a988079766676f3d22a"
+      ],
+      "iteration": null,
+      "output_artifact_ids": [
+        "artifact_77add24fe70c4ede91a1d21d86c82960"
+      ],
+      "run_id": "v2_role_graph_smoke",
+      "success": true,
+      "timestamp": "2026-06-01T21:34:07.266657+00:00",
+      "tool_call_id": "tool_call_20e24a3d691f442692e64e89783ecb03",
+      "tool_name": "profile_dataset"
+    },
+    {
+      "agent_role": "feature_engineer",
+      "arguments_summary": {
+        "request_sha256": "231b8c96a6e6fce639ebe039d9a861333ee9bb0cd052a7ce76f31f4b03b88f95"
+      },
+      "duration_ms": 564.9014169975999,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_284fdab963544a988079766676f3d22a",
+        "artifact_b961013699f14cf3a05e2ecfab542f40",
+        "artifact_77add24fe70c4ede91a1d21d86c82960"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_bbbdb1246e24448fb9bc546c728efcbe"
+      ],
+      "run_id": "v2_role_graph_smoke",
+      "success": true,
+      "timestamp": "2026-06-01T21:34:07.832356+00:00",
+      "tool_call_id": "tool_call_fe747293f18b4b87af548cced5988d61",
+      "tool_name": "build_battery_features"
+    },
+    {
+      "agent_role": "reviewer",
+      "arguments_summary": {
+        "request_sha256": "479732a99baacfeb20834a985aef23eb24a5518b662d1045bb1839de63f67af0"
+      },
+      "duration_ms": 13.534291996620595,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_8a56077dbbf24de08363c0aa7a532439"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_e91a588a4b5541229df812aa4a2a9bea"
+      ],
+      "run_id": "v2_role_graph_smoke",
+      "success": true,
+      "timestamp": "2026-06-01T21:34:07.898765+00:00",
+      "tool_call_id": "tool_call_8595911c057245ee948252e4982d8569",
+      "tool_name": "review_candidate"
+    },
+    {
+      "agent_role": "evaluator",
+      "arguments_summary": {
+        "request_sha256": "1afcf1538d15eda249d1915644b723c0cf916b19a3f982e52da5e08ffc4dbeba"
+      },
+      "duration_ms": 836.4130000045407,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_8a56077dbbf24de08363c0aa7a532439",
+        "artifact_50d5f64d6b664c29a8a2e1eafb64758c"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_5a0d0c86b78a42af85b1d4d31ddf9933"
+      ],
+      "run_id": "v2_role_graph_smoke",
+      "success": true,
+      "timestamp": "2026-06-01T21:34:08.746443+00:00",
+      "tool_call_id": "tool_call_191561d749d548faa9e2fc14c15f5229",
+      "tool_name": "evaluate_candidate"
+    }
+  ],
+  "validation_fraction": 0.25,
+  "validation_metrics": {
+    "agent_id": "evaluator",
+    "artifact_id": "artifact_7e119a14d6464862b57b71e565b97fb2",
+    "artifact_type": "EvaluationReport",
+    "candidate_id": "role_graph_iter_000",
+    "candidate_name": "role_graph_iter_000",
+    "candidate_path": "runs/open_battery_agents/v2_role_graph_smoke/candidates/role_graph_iter_000.py",
+    "created_at": "2026-06-01T21:34:08.746617Z",
+    "extra_metrics": {},
+    "failure_reason": null,
+    "human_readable_summary": "Evaluator completed with success=True.",
+    "iteration": 0,
+    "kendall": 0.1515151515151515,
+    "locked_batch9_validation_run": false,
+    "mae": 151.16576478995836,
+    "parent_artifact_ids": [
+      "artifact_8a56077dbbf24de08363c0aa7a532439",
+      "artifact_50d5f64d6b664c29a8a2e1eafb64758c",
+      "artifact_5a0d0c86b78a42af85b1d4d31ddf9933"
+    ],
+    "pgr": null,
+    "r2": 0.020527598105133382,
+    "rmse": 176.03634523076144,
+    "run_id": "v2_role_graph_smoke",
+    "schema_version": "open_battery_agents_artifacts.v1",
+    "spearman": 0.2191040843214756,
+    "split_mode": "random",
+    "stderr_excerpt": null,
+    "stdout_excerpt": null,
+    "success": true,
+    "traceback": null
+  }
+}

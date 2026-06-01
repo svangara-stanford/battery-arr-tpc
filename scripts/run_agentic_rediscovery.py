@@ -28,6 +28,7 @@ def main() -> int:
     parser.add_argument("--final-batch9-validation", action="store_true")
     parser.add_argument("--final-batch9-top-k", type=int, default=0)
     parser.add_argument("--seed-with-author-inspired-baselines", action="store_true")
+    parser.add_argument("--emit-artifact-trace", action="store_true")
     parser.add_argument("--battery-fast-charging-root", type=Path, default=None)
     parser.add_argument("--batch9-path", type=Path, default=None)
     parser.add_argument("--seed", type=int, default=0)
@@ -55,6 +56,7 @@ def main() -> int:
         batch9_path=args.batch9_path,
         seed_with_author_inspired_baselines=args.seed_with_author_inspired_baselines,
         final_batch9_top_k=args.final_batch9_top_k,
+        emit_artifact_trace=args.emit_artifact_trace,
     )
     return 0
 
