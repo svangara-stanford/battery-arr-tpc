@@ -1,0 +1,959 @@
+{
+  "all_required_model_variables_found": true,
+  "author_model_predictions_available": true,
+  "author_model_target_transform_requested": "auto",
+  "author_model_validation_metrics_unavailable_batch9_skipped": true,
+  "batch_name_mapping": {
+    "2018-08-28_oed_0": "oed1",
+    "2018-09-02_oed_1": "oed2",
+    "2018-09-06_oed_2": "oed3",
+    "2018-09-10_oed_3": "oed4"
+  },
+  "batches": [
+    {
+      "anomalous_predictions": 0,
+      "available_predictions": 46,
+      "batch_name": "oed1",
+      "bayesgap_excluded_rows": [],
+      "bayesgap_exclusion_reasons": {},
+      "bayesgap_rows": 46,
+      "cells_parsed": 46,
+      "cells_with_exact_features_available": 46,
+      "cutoff_cycle": 98,
+      "excluded_cells": [
+        {
+          "cell_id": "2018-08-28_oed_0_CH17_structure",
+          "channel": "17",
+          "path": "/Users/sreyavangara/Documents/Research/Code/battery-arr/literature_models_and_data/battery-fast-charging/data/2018-08-28_oed_0/2018-08-28_oed_0_CH17_structure.json",
+          "reason": "/Users/sreyavangara/Documents/Research/Code/battery-arr/literature_models_and_data/battery-fast-charging/data/2018-08-28_oed_0/2018-08-28_oed_0_CH17_structure.json does not contain summary and cycles_interpolated arrays"
+        },
+        {
+          "cell_id": "2018-08-28_oed_0_CH27_structure",
+          "channel": "27",
+          "path": "/Users/sreyavangara/Documents/Research/Code/battery-arr/literature_models_and_data/battery-fast-charging/data/2018-08-28_oed_0/2018-08-28_oed_0_CH27_structure.json",
+          "reason": "/Users/sreyavangara/Documents/Research/Code/battery-arr/literature_models_and_data/battery-fast-charging/data/2018-08-28_oed_0/2018-08-28_oed_0_CH27_structure.json does not contain summary.discharge_capacity"
+        }
+      ],
+      "finite_predictions": 46,
+      "folder": "2018-08-28_oed_0",
+      "model_file": "/Users/sreyavangara/Documents/Research/Code/battery-arr/literature_models_and_data/battery-fast-charging/BMS-autoanalysis/oed_model_batch1.mat",
+      "rows": 46,
+      "status": "ok",
+      "total_raw_cell_files": 48,
+      "unavailable_features": 0
+    },
+    {
+      "anomalous_predictions": 1,
+      "available_predictions": 45,
+      "batch_name": "oed2",
+      "bayesgap_excluded_rows": [
+        {
+          "cell_id": "2018-09-02_oed_1_CH11",
+          "channel": 11,
+          "reasons": [
+            "prediction_le_0",
+            "anomalous_ci_width_gt_2000"
+          ]
+        }
+      ],
+      "bayesgap_exclusion_reasons": {
+        "anomalous_ci_width_gt_2000": 1,
+        "prediction_le_0": 1
+      },
+      "bayesgap_rows": 45,
+      "cells_parsed": 46,
+      "cells_with_exact_features_available": 46,
+      "cutoff_cycle": 100,
+      "excluded_cells": [],
+      "finite_predictions": 46,
+      "folder": "2018-09-02_oed_1",
+      "model_file": "/Users/sreyavangara/Documents/Research/Code/battery-arr/literature_models_and_data/battery-fast-charging/BMS-autoanalysis/oed_model.mat",
+      "rows": 46,
+      "status": "ok",
+      "total_raw_cell_files": 46,
+      "unavailable_features": 0
+    },
+    {
+      "anomalous_predictions": 1,
+      "available_predictions": 47,
+      "batch_name": "oed3",
+      "bayesgap_excluded_rows": [
+        {
+          "cell_id": "2018-09-06_oed_2_CH11",
+          "channel": 11,
+          "reasons": [
+            "prediction_le_0",
+            "anomalous_ci_width_gt_2000"
+          ]
+        }
+      ],
+      "bayesgap_exclusion_reasons": {
+        "anomalous_ci_width_gt_2000": 1,
+        "prediction_le_0": 1
+      },
+      "bayesgap_rows": 47,
+      "cells_parsed": 48,
+      "cells_with_exact_features_available": 48,
+      "cutoff_cycle": 100,
+      "excluded_cells": [],
+      "finite_predictions": 48,
+      "folder": "2018-09-06_oed_2",
+      "model_file": "/Users/sreyavangara/Documents/Research/Code/battery-arr/literature_models_and_data/battery-fast-charging/BMS-autoanalysis/oed_model.mat",
+      "rows": 48,
+      "status": "ok",
+      "total_raw_cell_files": 48,
+      "unavailable_features": 0
+    },
+    {
+      "anomalous_predictions": 0,
+      "available_predictions": 48,
+      "batch_name": "oed4",
+      "bayesgap_excluded_rows": [],
+      "bayesgap_exclusion_reasons": {},
+      "bayesgap_rows": 48,
+      "cells_parsed": 48,
+      "cells_with_exact_features_available": 48,
+      "cutoff_cycle": 95,
+      "excluded_cells": [],
+      "finite_predictions": 48,
+      "folder": "2018-09-10_oed_3",
+      "model_file": "/Users/sreyavangara/Documents/Research/Code/battery-arr/literature_models_and_data/battery-fast-charging/BMS-autoanalysis/oed_model.mat",
+      "rows": 48,
+      "status": "ok",
+      "total_raw_cell_files": 48,
+      "unavailable_features": 0
+    }
+  ],
+  "bayesgap_rounds": [
+    {
+      "consumed_prediction_file": null,
+      "input_rows": 0,
+      "output_file": "runs/attia_reference_reproduction/bayesgap/round_0_next_batch.csv",
+      "round_description": "generate/select initial batch if needed",
+      "round_idx": 0
+    },
+    {
+      "consumed_prediction_file": "runs/attia_reference_reproduction/early_predictions/2018-08-28_oed_0.csv",
+      "input_rows": 46,
+      "output_file": "runs/attia_reference_reproduction/bayesgap/round_1_next_batch.csv",
+      "round_description": "consume predictions from 2018-08-28_oed_0.csv",
+      "round_idx": 1
+    },
+    {
+      "consumed_prediction_file": "runs/attia_reference_reproduction/early_predictions/2018-09-02_oed_1.csv",
+      "input_rows": 45,
+      "output_file": "runs/attia_reference_reproduction/bayesgap/round_2_next_batch.csv",
+      "round_description": "consume predictions from 2018-09-02_oed_1.csv",
+      "round_idx": 2
+    },
+    {
+      "consumed_prediction_file": "runs/attia_reference_reproduction/early_predictions/2018-09-06_oed_2.csv",
+      "input_rows": 47,
+      "output_file": "runs/attia_reference_reproduction/bayesgap/round_3_next_batch.csv",
+      "round_description": "consume predictions from 2018-09-06_oed_2.csv",
+      "round_idx": 3
+    },
+    {
+      "consumed_prediction_file": "runs/attia_reference_reproduction/early_predictions/2018-09-10_oed_3.csv",
+      "input_rows": 48,
+      "output_file": "runs/attia_reference_reproduction/bayesgap/round_4_next_batch.csv",
+      "round_description": "consume predictions from 2018-09-10_oed_3.csv",
+      "round_idx": 4
+    }
+  ],
+  "bayesgap_top_protocols": [
+    {
+      "C1": 4.4,
+      "C2": 5.6,
+      "C3": 5.6,
+      "C4": 4.017,
+      "final_posterior_lower": 918.9745,
+      "final_posterior_mean": 931.8171500000001,
+      "final_posterior_rank": 1,
+      "final_posterior_upper": 944.6598,
+      "posterior_half_width": 12.842649999999992
+    },
+    {
+      "C1": 4.0,
+      "C2": 5.6,
+      "C3": 5.6,
+      "C4": 4.421,
+      "final_posterior_lower": 914.144,
+      "final_posterior_mean": 928.6817,
+      "final_posterior_rank": 2,
+      "final_posterior_upper": 943.2194,
+      "posterior_half_width": 14.537699999999973
+    },
+    {
+      "C1": 4.4,
+      "C2": 5.6,
+      "C3": 5.2,
+      "C4": 4.252,
+      "final_posterior_lower": 913.883,
+      "final_posterior_mean": 925.98485,
+      "final_posterior_rank": 3,
+      "final_posterior_upper": 938.0867,
+      "posterior_half_width": 12.101849999999956
+    },
+    {
+      "C1": 4.0,
+      "C2": 5.6,
+      "C3": 5.2,
+      "C4": 4.707,
+      "final_posterior_lower": 904.5016,
+      "final_posterior_mean": 920.53925,
+      "final_posterior_rank": 4,
+      "final_posterior_upper": 936.5769,
+      "posterior_half_width": 16.037649999999985
+    },
+    {
+      "C1": 4.8,
+      "C2": 7.0,
+      "C3": 4.4,
+      "C4": 3.924,
+      "final_posterior_lower": 897.8592,
+      "final_posterior_mean": 916.3525,
+      "final_posterior_rank": 5,
+      "final_posterior_upper": 934.8458,
+      "posterior_half_width": 18.493300000000033
+    },
+    {
+      "C1": 4.8,
+      "C2": 5.2,
+      "C3": 5.2,
+      "C4": 4.16,
+      "final_posterior_lower": 900.4774,
+      "final_posterior_mean": 912.83875,
+      "final_posterior_rank": 6,
+      "final_posterior_upper": 925.2001,
+      "posterior_half_width": 12.361350000000016
+    },
+    {
+      "C1": 5.6,
+      "C2": 5.2,
+      "C3": 4.0,
+      "C4": 4.707,
+      "final_posterior_lower": 880.1903,
+      "final_posterior_mean": 910.2393999999999,
+      "final_posterior_rank": 7,
+      "final_posterior_upper": 940.2885,
+      "posterior_half_width": 30.04910000000001
+    },
+    {
+      "C1": 4.8,
+      "C2": 5.2,
+      "C3": 5.6,
+      "C4": 3.935,
+      "final_posterior_lower": 895.2702,
+      "final_posterior_mean": 908.85265,
+      "final_posterior_rank": 8,
+      "final_posterior_upper": 922.4351,
+      "posterior_half_width": 13.582449999999994
+    },
+    {
+      "C1": 4.4,
+      "C2": 5.2,
+      "C3": 5.2,
+      "C4": 4.516,
+      "final_posterior_lower": 892.8794,
+      "final_posterior_mean": 908.1030000000001,
+      "final_posterior_rank": 9,
+      "final_posterior_upper": 923.3266,
+      "posterior_half_width": 15.223599999999976
+    },
+    {
+      "C1": 4.0,
+      "C2": 6.0,
+      "C3": 5.6,
+      "C4": 4.2,
+      "final_posterior_lower": 893.0427,
+      "final_posterior_mean": 907.6309,
+      "final_posterior_rank": 10,
+      "final_posterior_upper": 922.2191,
+      "posterior_half_width": 14.588200000000029
+    }
+  ],
+  "caveats": [
+    "Final top three posterior-mean protocols do not exactly match the paper-reported CLO top protocols; this may reflect implementation differences, exclusion handling, raw-data parsing, or skipped validation.",
+    "Batch 9 validation was skipped by default; no final validation ranking was written."
+  ],
+  "exact_author_model_replay": true,
+  "final_posterior_ranking_path": "runs/attia_reference_reproduction/bayesgap/final_posterior_ranking.csv",
+  "final_posterior_ranking_top": [
+    {
+      "C1": 4.4,
+      "C2": 5.6,
+      "C3": 5.6,
+      "C4": 4.017,
+      "final_posterior_lower": 918.9745,
+      "final_posterior_mean": 931.8171500000001,
+      "final_posterior_rank": 1,
+      "final_posterior_upper": 944.6598,
+      "posterior_half_width": 12.842649999999992
+    },
+    {
+      "C1": 4.0,
+      "C2": 5.6,
+      "C3": 5.6,
+      "C4": 4.421,
+      "final_posterior_lower": 914.144,
+      "final_posterior_mean": 928.6817,
+      "final_posterior_rank": 2,
+      "final_posterior_upper": 943.2194,
+      "posterior_half_width": 14.537699999999973
+    },
+    {
+      "C1": 4.4,
+      "C2": 5.6,
+      "C3": 5.2,
+      "C4": 4.252,
+      "final_posterior_lower": 913.883,
+      "final_posterior_mean": 925.98485,
+      "final_posterior_rank": 3,
+      "final_posterior_upper": 938.0867,
+      "posterior_half_width": 12.101849999999956
+    },
+    {
+      "C1": 4.0,
+      "C2": 5.6,
+      "C3": 5.2,
+      "C4": 4.707,
+      "final_posterior_lower": 904.5016,
+      "final_posterior_mean": 920.53925,
+      "final_posterior_rank": 4,
+      "final_posterior_upper": 936.5769,
+      "posterior_half_width": 16.037649999999985
+    },
+    {
+      "C1": 4.8,
+      "C2": 7.0,
+      "C3": 4.4,
+      "C4": 3.924,
+      "final_posterior_lower": 897.8592,
+      "final_posterior_mean": 916.3525,
+      "final_posterior_rank": 5,
+      "final_posterior_upper": 934.8458,
+      "posterior_half_width": 18.493300000000033
+    },
+    {
+      "C1": 4.8,
+      "C2": 5.2,
+      "C3": 5.2,
+      "C4": 4.16,
+      "final_posterior_lower": 900.4774,
+      "final_posterior_mean": 912.83875,
+      "final_posterior_rank": 6,
+      "final_posterior_upper": 925.2001,
+      "posterior_half_width": 12.361350000000016
+    },
+    {
+      "C1": 5.6,
+      "C2": 5.2,
+      "C3": 4.0,
+      "C4": 4.707,
+      "final_posterior_lower": 880.1903,
+      "final_posterior_mean": 910.2393999999999,
+      "final_posterior_rank": 7,
+      "final_posterior_upper": 940.2885,
+      "posterior_half_width": 30.04910000000001
+    },
+    {
+      "C1": 4.8,
+      "C2": 5.2,
+      "C3": 5.6,
+      "C4": 3.935,
+      "final_posterior_lower": 895.2702,
+      "final_posterior_mean": 908.85265,
+      "final_posterior_rank": 8,
+      "final_posterior_upper": 922.4351,
+      "posterior_half_width": 13.582449999999994
+    },
+    {
+      "C1": 4.4,
+      "C2": 5.2,
+      "C3": 5.2,
+      "C4": 4.516,
+      "final_posterior_lower": 892.8794,
+      "final_posterior_mean": 908.1030000000001,
+      "final_posterior_rank": 9,
+      "final_posterior_upper": 923.3266,
+      "posterior_half_width": 15.223599999999976
+    },
+    {
+      "C1": 4.0,
+      "C2": 6.0,
+      "C3": 5.6,
+      "C4": 4.2,
+      "final_posterior_lower": 893.0427,
+      "final_posterior_mean": 907.6309,
+      "final_posterior_rank": 10,
+      "final_posterior_upper": 922.2191,
+      "posterior_half_width": 14.588200000000029
+    }
+  ],
+  "final_top_three_match_paper": false,
+  "next_batch_acquisition_recommendations": [
+    {
+      "C1": 4.8,
+      "C2": 5.6,
+      "C3": 5.2,
+      "C4": 3.935,
+      "round_idx": 0
+    },
+    {
+      "C1": 6.0,
+      "C2": 4.4,
+      "C3": 4.8,
+      "C4": 4.328,
+      "round_idx": 0
+    },
+    {
+      "C1": 5.6,
+      "C2": 7.0,
+      "C3": 4.8,
+      "C4": 3.294,
+      "round_idx": 0
+    },
+    {
+      "C1": 7.0,
+      "C2": 5.2,
+      "C3": 4.8,
+      "C4": 3.45,
+      "round_idx": 0
+    },
+    {
+      "C1": 5.6,
+      "C2": 5.2,
+      "C3": 4.4,
+      "C4": 4.252,
+      "round_idx": 0
+    },
+    {
+      "C1": 8.0,
+      "C2": 7.0,
+      "C3": 4.8,
+      "C4": 2.8,
+      "round_idx": 0
+    },
+    {
+      "C1": 5.6,
+      "C2": 6.0,
+      "C3": 5.2,
+      "C4": 3.381,
+      "round_idx": 0
+    },
+    {
+      "C1": 3.6,
+      "C2": 6.0,
+      "C3": 5.6,
+      "C4": 4.755,
+      "round_idx": 0
+    },
+    {
+      "C1": 6.0,
+      "C2": 4.4,
+      "C3": 5.2,
+      "C4": 4.047,
+      "round_idx": 0
+    },
+    {
+      "C1": 7.0,
+      "C2": 5.2,
+      "C3": 4.4,
+      "C4": 3.691,
+      "round_idx": 0
+    },
+    {
+      "C1": 4.4,
+      "C2": 7.0,
+      "C3": 4.0,
+      "C4": 4.69,
+      "round_idx": 1
+    },
+    {
+      "C1": 4.0,
+      "C2": 7.0,
+      "C3": 4.4,
+      "C4": 4.69,
+      "round_idx": 1
+    },
+    {
+      "C1": 4.4,
+      "C2": 7.0,
+      "C3": 4.4,
+      "C4": 4.239,
+      "round_idx": 1
+    },
+    {
+      "C1": 8.0,
+      "C2": 7.0,
+      "C3": 5.6,
+      "C4": 2.585,
+      "round_idx": 1
+    },
+    {
+      "C1": 4.8,
+      "C2": 7.0,
+      "C3": 4.0,
+      "C4": 4.308,
+      "round_idx": 1
+    },
+    {
+      "C1": 8.0,
+      "C2": 7.0,
+      "C3": 5.2,
+      "C4": 2.68,
+      "round_idx": 1
+    },
+    {
+      "C1": 4.8,
+      "C2": 7.0,
+      "C3": 4.4,
+      "C4": 3.924,
+      "round_idx": 1
+    },
+    {
+      "C1": 8.0,
+      "C2": 7.0,
+      "C3": 4.8,
+      "C4": 2.8,
+      "round_idx": 1
+    },
+    {
+      "C1": 4.4,
+      "C2": 7.0,
+      "C3": 4.8,
+      "C4": 3.924,
+      "round_idx": 1
+    },
+    {
+      "C1": 7.0,
+      "C2": 7.0,
+      "C3": 5.6,
+      "C4": 2.71,
+      "round_idx": 1
+    },
+    {
+      "C1": 4.4,
+      "C2": 5.2,
+      "C3": 5.2,
+      "C4": 4.516,
+      "round_idx": 2
+    },
+    {
+      "C1": 4.8,
+      "C2": 5.2,
+      "C3": 4.8,
+      "C4": 4.457,
+      "round_idx": 2
+    },
+    {
+      "C1": 4.4,
+      "C2": 5.6,
+      "C3": 5.2,
+      "C4": 4.252,
+      "round_idx": 2
+    },
+    {
+      "C1": 4.8,
+      "C2": 5.2,
+      "C3": 5.2,
+      "C4": 4.16,
+      "round_idx": 2
+    },
+    {
+      "C1": 4.0,
+      "C2": 5.2,
+      "C3": 5.6,
+      "C4": 4.707,
+      "round_idx": 2
+    },
+    {
+      "C1": 4.4,
+      "C2": 5.6,
+      "C3": 4.8,
+      "C4": 4.563,
+      "round_idx": 2
+    },
+    {
+      "C1": 4.4,
+      "C2": 5.6,
+      "C3": 5.6,
+      "C4": 4.017,
+      "round_idx": 2
+    },
+    {
+      "C1": 4.0,
+      "C2": 5.6,
+      "C3": 5.6,
+      "C4": 4.421,
+      "round_idx": 2
+    },
+    {
+      "C1": 4.0,
+      "C2": 5.6,
+      "C3": 5.2,
+      "C4": 4.707,
+      "round_idx": 2
+    },
+    {
+      "C1": 4.4,
+      "C2": 5.2,
+      "C3": 5.6,
+      "C4": 4.252,
+      "round_idx": 2
+    },
+    {
+      "C1": 4.0,
+      "C2": 5.6,
+      "C3": 5.6,
+      "C4": 4.421,
+      "round_idx": 3
+    },
+    {
+      "C1": 4.8,
+      "C2": 7.0,
+      "C3": 4.0,
+      "C4": 4.308,
+      "round_idx": 3
+    },
+    {
+      "C1": 4.0,
+      "C2": 5.2,
+      "C3": 5.6,
+      "C4": 4.707,
+      "round_idx": 3
+    },
+    {
+      "C1": 5.2,
+      "C2": 7.0,
+      "C3": 3.6,
+      "C4": 4.537,
+      "round_idx": 3
+    },
+    {
+      "C1": 5.2,
+      "C2": 7.0,
+      "C3": 4.0,
+      "C4": 4.03,
+      "round_idx": 3
+    },
+    {
+      "C1": 4.8,
+      "C2": 7.0,
+      "C3": 4.4,
+      "C4": 3.924,
+      "round_idx": 3
+    },
+    {
+      "C1": 4.4,
+      "C2": 5.6,
+      "C3": 5.6,
+      "C4": 4.017,
+      "round_idx": 3
+    },
+    {
+      "C1": 5.2,
+      "C2": 7.0,
+      "C3": 4.4,
+      "C4": 3.691,
+      "round_idx": 3
+    },
+    {
+      "C1": 4.4,
+      "C2": 5.2,
+      "C3": 5.2,
+      "C4": 4.516,
+      "round_idx": 3
+    },
+    {
+      "C1": 4.0,
+      "C2": 5.6,
+      "C3": 5.2,
+      "C4": 4.707,
+      "round_idx": 3
+    },
+    {
+      "C1": 4.0,
+      "C2": 5.6,
+      "C3": 5.6,
+      "C4": 4.421,
+      "round_idx": 4
+    },
+    {
+      "C1": 5.6,
+      "C2": 5.2,
+      "C3": 4.0,
+      "C4": 4.707,
+      "round_idx": 4
+    },
+    {
+      "C1": 4.4,
+      "C2": 5.6,
+      "C3": 5.6,
+      "C4": 4.017,
+      "round_idx": 4
+    },
+    {
+      "C1": 4.0,
+      "C2": 5.6,
+      "C3": 5.2,
+      "C4": 4.707,
+      "round_idx": 4
+    },
+    {
+      "C1": 4.8,
+      "C2": 7.0,
+      "C3": 4.4,
+      "C4": 3.924,
+      "round_idx": 4
+    },
+    {
+      "C1": 6.0,
+      "C2": 4.8,
+      "C3": 4.0,
+      "C4": 4.8,
+      "round_idx": 4
+    },
+    {
+      "C1": 4.8,
+      "C2": 7.0,
+      "C3": 4.0,
+      "C4": 4.308,
+      "round_idx": 4
+    },
+    {
+      "C1": 4.8,
+      "C2": 5.2,
+      "C3": 5.2,
+      "C4": 4.16,
+      "round_idx": 4
+    },
+    {
+      "C1": 4.4,
+      "C2": 5.2,
+      "C3": 5.2,
+      "C4": 4.516,
+      "round_idx": 4
+    },
+    {
+      "C1": 4.8,
+      "C2": 5.2,
+      "C3": 5.6,
+      "C4": 3.935,
+      "round_idx": 4
+    }
+  ],
+  "oed_model_batch1_found": true,
+  "oed_model_found": true,
+  "paper_top_protocol_check": [
+    {
+      "C1": 4.8,
+      "C2": 5.2,
+      "C3": 5.2,
+      "C4": 4.16,
+      "exists_in_policy_space": true,
+      "final_posterior_mean": 912.83875,
+      "final_posterior_rank": 6,
+      "final_posterior_uncertainty": 12.361350000000016,
+      "final_top_three_exact_match": false,
+      "protocol": "4.8C-5.2C-5.2C-4.160C"
+    },
+    {
+      "C1": 5.2,
+      "C2": 5.2,
+      "C3": 4.8,
+      "C4": 4.16,
+      "exists_in_policy_space": true,
+      "final_posterior_mean": 890.1992,
+      "final_posterior_rank": 25,
+      "final_posterior_uncertainty": 13.398400000000038,
+      "final_top_three_exact_match": false,
+      "protocol": "5.2C-5.2C-4.8C-4.160C"
+    },
+    {
+      "C1": 4.4,
+      "C2": 5.6,
+      "C3": 5.2,
+      "C4": 4.252,
+      "exists_in_policy_space": true,
+      "final_posterior_mean": 925.98485,
+      "final_posterior_rank": 3,
+      "final_posterior_uncertainty": 12.101849999999956,
+      "final_top_three_exact_match": false,
+      "protocol": "4.4C-5.6C-5.2C-4.252C"
+    }
+  ],
+  "paper_top_protocol_check_path": "runs/attia_reference_reproduction/bayesgap/final_paper_top_protocol_check.csv",
+  "prediction_scale_diagnostics": {
+    "2018-08-28_oed_0": {
+      "chosen_target_transform": "log10_cycle_life",
+      "ci_hi": {
+        "max": 1610.40672860463,
+        "median": 934.2293472753338,
+        "min": 611.568268848478
+      },
+      "ci_lo": {
+        "max": 946.8841774437925,
+        "median": 538.2803084061234,
+        "min": 370.795062846296
+      },
+      "ci_width": {
+        "max": 663.5225511608375,
+        "median": 395.4685951505382,
+        "min": 240.77320600218206
+      },
+      "inverse_ten_power_raw_output": {
+        "max": 0.002099957747648035,
+        "median": 0.0014142793607076255,
+        "min": 0.0008098112057641733
+      },
+      "n_ci_width_gt_2000": 0,
+      "n_prediction_le_0": 0,
+      "prediction": {
+        "max": 1234.855720545823,
+        "median": 707.1163565915431,
+        "min": 476.20005741544367
+      },
+      "raw_output": {
+        "max": 3.0916162179752678,
+        "median": 2.849477839828951,
+        "min": 2.6777894434317524
+      },
+      "ten_power_raw_output": {
+        "max": 1234.855720545823,
+        "median": 707.1163565915431,
+        "min": 476.20005741544367
+      }
+    },
+    "2018-09-02_oed_1": {
+      "chosen_target_transform": "log10_cycle_life",
+      "ci_hi": {
+        "max": 2511.3136920568004,
+        "median": 1411.4635726797042,
+        "min": 563.0880033366436
+      },
+      "ci_lo": {
+        "max": 697.316561882347,
+        "median": 554.9826790918214,
+        "min": 271.7388697571707
+      },
+      "ci_width": {
+        "max": 2085.300655241982,
+        "median": 827.2989169766518,
+        "min": 291.34913357947295
+      },
+      "inverse_ten_power_raw_output": {
+        "max": 0.0025564422135579408,
+        "median": 0.0011294108903951595,
+        "min": 0.0009152873580932278
+      },
+      "n_ci_width_gt_2000": 1,
+      "n_prediction_le_0": 1,
+      "prediction": {
+        "max": 1092.5530557782965,
+        "median": 882.2903981534288,
+        "min": 391.16863064479173
+      },
+      "raw_output": {
+        "max": 3.038442536051858,
+        "median": 2.9471507564512174,
+        "min": 2.5923640197246747
+      },
+      "ten_power_raw_output": {
+        "max": 1092.5530557782965,
+        "median": 885.4284738497562,
+        "min": 391.16863064479173
+      }
+    },
+    "2018-09-06_oed_2": {
+      "chosen_target_transform": "log10_cycle_life",
+      "ci_hi": {
+        "max": 5495.199382542949,
+        "median": 1071.3506063612956,
+        "min": 504.56162913544483
+      },
+      "ci_lo": {
+        "max": 689.1941948942815,
+        "median": 507.47881781256535,
+        "min": 43.142823959983225
+      },
+      "ci_width": {
+        "max": 5440.407179174811,
+        "median": 542.5741995160965,
+        "min": 212.4678542300154
+      },
+      "inverse_ten_power_raw_output": {
+        "max": 0.005531092381925146,
+        "median": 0.001437397914262525,
+        "min": 0.0009538875434178999
+      },
+      "n_ci_width_gt_2000": 1,
+      "n_prediction_le_0": 1,
+      "prediction": {
+        "max": 1048.3416068280683,
+        "median": 698.9941622629677,
+        "min": 180.79611240410003
+      },
+      "raw_output": {
+        "max": 3.020502822520065,
+        "median": 2.842427807867623,
+        "min": 2.2571890877566054
+      },
+      "ten_power_raw_output": {
+        "max": 1048.3416068280683,
+        "median": 695.7170168256686,
+        "min": 180.79611240410003
+      }
+    },
+    "2018-09-10_oed_3": {
+      "chosen_target_transform": "log10_cycle_life",
+      "ci_hi": {
+        "max": 2457.3770194147737,
+        "median": 1540.4421178393006,
+        "min": 770.9029808587244
+      },
+      "ci_lo": {
+        "max": 771.30902852599,
+        "median": 616.0981086813842,
+        "min": 351.22788877754454
+      },
+      "ci_width": {
+        "max": 1958.0394953012428,
+        "median": 911.8261422780212,
+        "min": 419.67509208117986
+      },
+      "inverse_ten_power_raw_output": {
+        "max": 0.001921788724344272,
+        "median": 0.0010388652945693237,
+        "min": 0.0007946035338005413
+      },
+      "n_ci_width_gt_2000": 0,
+      "n_prediction_le_0": 0,
+      "prediction": {
+        "max": 1258.489243330016,
+        "median": 962.6084878229224,
+        "min": 520.3485624265004
+      },
+      "raw_output": {
+        "max": 3.09984950786024,
+        "median": 2.9834452243742278,
+        "min": 2.7162943590685864
+      },
+      "ten_power_raw_output": {
+        "max": 1258.489243330016,
+        "median": 962.6084878229224,
+        "min": 520.3485624265004
+      }
+    }
+  },
+  "prediction_scale_diagnostics_path": "runs/attia_reference_reproduction/model_diagnostics/prediction_scale_diagnostics.json",
+  "status": "exact_author_model_replay",
+  "validation_metrics": null,
+  "validation_metrics_path": null,
+  "validation_protocol_ranking_path": null,
+  "validation_protocol_ranking_top": [],
+  "validation_status": "skipped_batch9_missing",
+  "validation_status_label": "validation_skipped_batch9_missing",
+  "validation_summary": null
+}

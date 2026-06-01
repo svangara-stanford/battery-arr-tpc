@@ -77,7 +77,7 @@ def validation_status(data_dir: str | Path, include_validation_batch: bool = Fal
     base = Path(data_dir)
     if include_validation_batch:
         validation = Path(validation_batch_path) if validation_batch_path else base / VALIDATION_BATCH_NAME
-        return "included_validation_batch" if validation.exists() else "validation_failed"
+        return "included_validation_batch" if validation.is_dir() else "validation_failed"
     if (base / VALIDATION_BATCH_ZIP).exists():
         return "skipped_batch9_zip_present"
     if (base / VALIDATION_BATCH_NAME).exists():

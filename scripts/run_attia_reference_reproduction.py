@@ -19,6 +19,7 @@ from battery_aar.paper_reproduction.bms_apply_model import (
 from battery_aar.paper_reproduction.bms_features import load_cells_from_batch_with_status
 from battery_aar.paper_reproduction.mat_model_loader import inspect_mat_model_file
 from battery_aar.paper_reproduction.paths import (
+    VALIDATION_BATCH_NAME,
     find_oed_batch_paths,
     infer_batch_name_map,
     parse_batch_name_map,
@@ -28,6 +29,7 @@ from battery_aar.paper_reproduction.paths import (
 )
 from battery_aar.paper_reproduction.policy_space import assert_author_policy_count, save_policy_space
 from battery_aar.paper_reproduction.reports import write_json_report, write_markdown_report
+from battery_aar.paper_reproduction.validation import write_validation_outputs
 
 
 def parse_args() -> argparse.Namespace:
@@ -60,6 +62,9 @@ SCRIPT_OWNED_OUTPUTS = (
     "early_predictions_rich",
     "bayesgap",
     "bayesgap_provided_predictions",
+    "validation",
+    "validation_protocol_ranking.csv",
+    "validation_metrics.json",
 )
 
 
@@ -147,7 +152,7 @@ def main() -> int:
     policies = save_policy_space(out / "policies_all.csv")
     assert_author_policy_count(policies)
 
-    batch_paths = find_oed_batch_paths(paths.data_dir, include_validation_batch=args.include_validation_batch, validation_batch_path=args.validation_batch_path)
+    batch_paths = find_oed_batch_paths(paths.data_dir, include_validation_batch=False)
     inferred_map = infer_batch_name_map(batch_paths)
     inferred_map.update(parse_batch_name_map(args.batch_name_map))
 
@@ -255,6 +260,7 @@ def main() -> int:
     final_top_three_exact_match = False
     final_posterior_ranking_path = None
     paper_top_protocol_check_path = None
+    final_ranking_df = None
     if prediction_csvs:
         results = run_closed_loop(out / "policies_all.csv", out / "bayesgap", prediction_csvs=prediction_csvs, config=BayesGapConfig(seed=0))
         for result in results:
@@ -273,6 +279,7 @@ def main() -> int:
                     next_batch_recommendations.append({"round_idx": int(result["round_idx"]), **item})
         if results and "final_posterior_ranking" in results[-1]:
             final_ranking = results[-1]["final_posterior_ranking"]
+            final_ranking_df = final_ranking
             final_posterior_ranking_path = str(results[-1]["final_posterior_ranking_path"])
             paper_top_protocol_check_path = str(results[-1]["paper_top_protocol_check_path"])
             if hasattr(final_ranking, "head"):
@@ -297,8 +304,76 @@ def main() -> int:
                 status = "used_author_prediction_csv_only"
                 caveats.append("BayesGap used author-provided prediction CSVs as a separately labeled fallback.")
 
+    validation_summary: dict[str, object] | None = None
+    validation_metrics: dict[str, object] | None = None
+    validation_protocol_ranking_top: list[dict[str, object]] = []
+    validation_protocol_ranking_path = None
+    validation_metrics_path = None
     if args.include_validation_batch:
-        caveats.append("Validation batch inclusion is experimental in this prototype.")
+        validation_batch_path = args.validation_batch_path if args.validation_batch_path else paths.data_dir / VALIDATION_BATCH_NAME
+        validation_summary = {
+            "batch_path": str(validation_batch_path),
+            "raw_files_discovered": 0,
+            "cells_parsed": 0,
+            "excluded_cells": [],
+            "validation_protocols_parsed": 0,
+            "protocol_level_rows_used": 0,
+            "status": "not_run",
+        }
+        try:
+            if not validation_batch_path.is_dir():
+                raise FileNotFoundError(f"Validation batch directory not found: {validation_batch_path}")
+            validation_summary["raw_files_discovered"] = len(list(validation_batch_path.glob("*_structure.json")))
+            validation_cutoff = 100
+            validation_model_path = model_path_for_batch_name(paths.bms_autoanalysis_dir, None)
+            cells, excluded = load_cells_from_batch_with_status(
+                validation_batch_path,
+                max_cells=args.max_cells_per_batch,
+                required_cycles=(10, validation_cutoff),
+            )
+            validation_summary["excluded_cells"] = excluded
+            validation_summary["cells_parsed"] = len(cells)
+            if not cells:
+                raise RuntimeError(f"No usable validation cells found in {validation_batch_path}")
+            validation_rich = apply_oed_model(
+                cells,
+                validation_model_path,
+                cutoff_cycle=validation_cutoff,
+                batch_name="batch9_validation",
+                target_transform=args.author_model_target_transform,
+            )
+            validation_dir = out / "validation"
+            validation_dir.mkdir(parents=True, exist_ok=True)
+            validation_rich_path = validation_dir / "batch9_predictions_rich.csv"
+            validation_rich.to_csv(validation_rich_path, index=False)
+            if final_ranking_df is None:
+                raise RuntimeError("Cannot run validation without a four-round final posterior ranking")
+            validation_protocol_ranking_path = str(out / "validation_protocol_ranking.csv")
+            validation_metrics_path = str(out / "validation_metrics.json")
+            validation_ranking, validation_metrics = write_validation_outputs(
+                validation_rich,
+                final_ranking_df,
+                out / "validation_protocol_ranking.csv",
+                out / "validation_metrics.json",
+            )
+            validation_protocol_ranking_top = validation_ranking.head(20).to_dict("records") if hasattr(validation_ranking, "head") else []
+            validation_summary.update(
+                {
+                    "status": "ok",
+                    "validation_predictions_rich_path": str(validation_rich_path),
+                    "validation_protocol_ranking_path": validation_protocol_ranking_path,
+                    "validation_metrics_path": validation_metrics_path,
+                    "validation_protocols_parsed": validation_metrics.get("validation_protocols_parsed", 0) if validation_metrics else 0,
+                    "protocol_level_rows_used": validation_metrics.get("protocol_level_rows_used", 0) if validation_metrics else 0,
+                }
+            )
+        except Exception as exc:
+            val_status = "validation_failed"
+            val_label = validation_status_label(val_status)
+            if validation_summary is not None:
+                validation_summary["status"] = "failed"
+                validation_summary["error"] = str(exc)
+            caveats.append(f"Batch 9 validation failed: {exc}")
     else:
         caveats.append("Batch 9 validation was skipped by default; no final validation ranking was written.")
 
@@ -323,6 +398,11 @@ def main() -> int:
         "paper_top_protocol_check": paper_top_protocol_check,
         "paper_top_protocol_check_path": paper_top_protocol_check_path,
         "final_top_three_match_paper": final_top_three_exact_match,
+        "validation_summary": validation_summary,
+        "validation_metrics": validation_metrics,
+        "validation_protocol_ranking_top": validation_protocol_ranking_top,
+        "validation_protocol_ranking_path": validation_protocol_ranking_path,
+        "validation_metrics_path": validation_metrics_path,
         "validation_status": val_status,
         "validation_status_label": val_label,
         "bayesgap_top_protocols": bayesgap_top,

@@ -107,6 +107,40 @@ def write_markdown_report(report: dict[str, Any], path: str | Path) -> None:
                 "- Audit note: mismatch may reflect implementation differences, exclusion handling, raw-data parsing, "
                 "or skipped validation; this report does not claim exact paper Figure 3 reproduction."
             )
+    if report.get("validation_summary"):
+        summary = report["validation_summary"]
+        metrics = report.get("validation_metrics") or {}
+        lines.extend(["", "## Batch 9 Validation"])
+        lines.append(f"validation_status: `{report.get('validation_status')}`")
+        lines.append(f"batch_path: `{summary.get('batch_path')}`")
+        lines.append(f"raw files discovered: `{summary.get('raw_files_discovered')}`")
+        lines.append(f"cells parsed: `{summary.get('cells_parsed')}`")
+        lines.append(f"excluded cells: `{len(summary.get('excluded_cells') or [])}`")
+        lines.append(f"protocols parsed: `{summary.get('validation_protocols_parsed')}`")
+        lines.append(f"protocol-level rows used: `{summary.get('protocol_level_rows_used')}`")
+        if report.get("validation_protocol_ranking_path"):
+            lines.append(f"validation_protocol_ranking: `{report.get('validation_protocol_ranking_path')}`")
+        if report.get("validation_metrics_path"):
+            lines.append(f"validation_metrics: `{report.get('validation_metrics_path')}`")
+        if metrics:
+            posterior = metrics.get("posterior_vs_observed") or {}
+            early = metrics.get("early_prediction_vs_observed") or {}
+            lines.append(
+                f"posterior vs observed: n `{posterior.get('n')}`, Pearson `{posterior.get('pearson')}`, "
+                f"Kendall `{posterior.get('kendall')}`, RMSE `{posterior.get('rmse')}`, MAE `{posterior.get('mae')}`"
+            )
+            lines.append(
+                f"early prediction vs observed: n `{early.get('n')}`, Pearson `{early.get('pearson')}`, "
+                f"Kendall `{early.get('kendall')}`, RMSE `{early.get('rmse')}`, MAE `{early.get('mae')}`"
+            )
+        if report.get("validation_protocol_ranking_top"):
+            lines.append("validation protocol ranking preview:")
+            for item in report["validation_protocol_ranking_top"][:10]:
+                lines.append(
+                    f"- observed rank `{item.get('observed_protocol_rank')}`: C1={item.get('C1')}, C2={item.get('C2')}, "
+                    f"C3={item.get('C3')}, C4={item.get('C4')}, observed mean `{item.get('observed_cycle_life_mean')}`, "
+                    f"posterior mean `{item.get('final_posterior_mean')}`, early mean `{item.get('author_early_prediction_mean')}`"
+                )
     lines.extend(["", "## Caveats"])
     for caveat in report.get("caveats", []):
         lines.append(f"- {caveat}")
