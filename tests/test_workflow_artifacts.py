@@ -1,9 +1,13 @@
+import ast
 import json
+from pathlib import Path
+from typing import get_args, get_origin, Union
 
 import pandas as pd
 
 from battery_aar.agents.orchestrator import run_rediscovery
 from battery_aar.workflows.artifacts import ArtifactStore, build_dataset_profile_artifact
+import battery_aar.workflows.schemas as workflow_schemas
 from battery_aar.workflows.schemas import AgentRole, CandidateSpec, EvaluationReport, RunManifest
 from battery_aar.workflows.trace import TraceLogger
 
@@ -44,6 +48,35 @@ def test_pydantic_artifact_schemas_serialize_deserialize():
     assert round_tripped.schema_version == evaluation.schema_version
     assert round_tripped.rmse == 12.5
     assert candidate.agent_role == AgentRole.LLM_CANDIDATE
+
+
+def test_workflow_schema_runtime_unions_are_python39_safe():
+    assert get_origin(workflow_schemas.ArtifactModel) is Union
+    assert workflow_schemas.RunManifest in get_args(workflow_schemas.ArtifactModel)
+
+    source_path = Path(workflow_schemas.__file__)
+    tree = ast.parse(source_path.read_text())
+    bad_assignments: list[str] = []
+
+    def contains_bit_or(node: ast.AST) -> bool:
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+            return True
+        return any(contains_bit_or(child) for child in ast.iter_child_nodes(node))
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and contains_bit_or(node.value):
+            targets = []
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    targets.append(target.id)
+            bad_assignments.extend(targets or [f"line_{node.lineno}"])
+        elif isinstance(node, ast.AnnAssign) and node.value is not None and contains_bit_or(node.value):
+            if isinstance(node.target, ast.Name):
+                bad_assignments.append(node.target.id)
+            else:
+                bad_assignments.append(f"line_{node.lineno}")
+
+    assert bad_assignments == []
 
 
 def test_artifact_store_writes_json_and_index_entries(tmp_path):

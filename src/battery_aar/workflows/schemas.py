@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, Literal, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -212,16 +212,16 @@ class ExperimentState(ArtifactBase):
     output_paths: dict[str, str] = Field(default_factory=dict)
 
 
-ArtifactModel = (
-    RunManifest
-    | DatasetProfileArtifact
-    | SplitArtifact
-    | FeaturePlan
-    | ModelPlan
-    | CandidateSpec
-    | ReviewReport
-    | EvaluationReport
-    | CritiqueReport
-    | ToolCallRecord
-    | ExperimentState
-)
+ArtifactModel = Union[
+    RunManifest,
+    DatasetProfileArtifact,
+    SplitArtifact,
+    FeaturePlan,
+    ModelPlan,
+    CandidateSpec,
+    ReviewReport,
+    EvaluationReport,
+    CritiqueReport,
+    ToolCallRecord,
+    ExperimentState,
+]
