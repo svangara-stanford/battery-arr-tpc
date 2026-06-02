@@ -10,7 +10,7 @@ import battery_aar.features.severson_matr as severson_matr
 from battery_aar.features.severson_matr import TRUE_LABEL_SOURCE, build_severson_true_life_dataset
 from battery_aar.workflows.role_graph import _label_source_summary
 
-from .severson_test_utils import write_toy_severson_mat_dir
+from .severson_test_utils import write_toy_severson_h5_mat_dir, write_toy_severson_mat_dir
 
 
 def test_build_severson_true_life_dataset_outputs_processed_tables(tmp_path):
@@ -75,6 +75,24 @@ def test_build_severson_true_life_dataset_handles_ragged_cycles(tmp_path):
     assert len(labels) == 1
     assert len(cycles) == 100
     assert labels.loc[0, "label_source"] == TRUE_LABEL_SOURCE
+
+
+def test_build_severson_true_life_dataset_includes_h5_v73_cells(tmp_path):
+    mat_dir = write_toy_severson_h5_mat_dir(tmp_path, n_files=1, n_cells_per_file=2)
+    out = tmp_path / "h5_processed"
+
+    card = build_severson_true_life_dataset(mat_dir=mat_dir, out_dir=out, first_n_cycles=100)
+    metadata = pd.read_csv(out / "cell_metadata.csv")
+    labels = pd.read_csv(out / "labels.csv")
+    cycles = pd.read_csv(out / "cycle_summary.csv")
+
+    assert card["included_cells"] == 2
+    assert len(metadata) == 2
+    assert len(labels) == 2
+    assert len(cycles) == 200
+    assert set(labels["label_source"]) == {TRUE_LABEL_SOURCE}
+    assert cycles["discharge_capacity"].notna().any()
+    assert cycles["dc_internal_resistance"].notna().any()
 
 
 def test_cycle_parse_failure_is_nonfatal_when_summary_and_life_are_valid(tmp_path, monkeypatch):

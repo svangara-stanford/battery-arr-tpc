@@ -6,7 +6,7 @@ import sys
 
 from battery_aar.features.severson_matr import audit_severson_mat_dir, severson_cells_from_file
 
-from .severson_test_utils import write_toy_severson_mat_dir
+from .severson_test_utils import write_toy_severson_h5_mat_dir, write_toy_severson_mat_dir
 
 
 def test_severson_matr_loader_audits_toy_mat_files(tmp_path):
@@ -35,6 +35,35 @@ def test_severson_cells_from_file_extracts_summary_curves_and_life(tmp_path):
     assert "discharge_capacity" in cell.summary
     assert "dc_internal_resistance" in cell.summary
     assert {"voltage", "current", "discharge_capacity", "step_type"}.issubset(cell.cycles_interpolated)
+
+
+def test_severson_h5_v73_refs_parse_multiple_cells(tmp_path):
+    mat_dir = write_toy_severson_h5_mat_dir(tmp_path, n_files=1, n_cells_per_file=3)
+    cells, loaded = severson_cells_from_file(next(mat_dir.glob("*.mat")), first_n_cycles=100)
+
+    assert loaded.load_method == "h5py.File"
+    assert loaded.keys == ["#refs#", "batch", "batch_date"]
+    assert len(cells) == 3
+    assert [cell.cycle_life for cell in cells] == [700.0, 705.0, 710.0]
+    assert all(len(cell.summary["cycle_index"]) == 100 for cell in cells)
+    assert all("discharge_capacity" in cell.summary for cell in cells)
+    assert all("dc_internal_resistance" in cell.summary for cell in cells)
+    assert all("charge_duration" in cell.summary for cell in cells)
+    assert {"voltage", "current", "discharge_capacity", "step_type"}.issubset(cells[0].cycles_interpolated)
+
+
+def test_severson_h5_audit_counts_referenced_cells(tmp_path):
+    mat_dir = write_toy_severson_h5_mat_dir(tmp_path, n_files=1, n_cells_per_file=2)
+    audit = audit_severson_mat_dir(mat_dir)
+
+    file_report = audit["files"][0]
+    assert file_report["load_method"] == "h5py.File"
+    assert file_report["n_cells"] == 2
+    assert file_report["true_cycle_life_present"] is True
+    assert file_report["cycle_life_min"] == 700.0
+    assert file_report["cycle_life_max"] == 705.0
+    assert file_report["cells_with_first_100_cycles"] == 2
+    assert file_report["field_availability"]["discharge_capacity"] is True
 
 
 def test_audit_severson_matr_data_script_writes_reports(tmp_path):

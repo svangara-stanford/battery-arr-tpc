@@ -27,6 +27,7 @@ SUMMARY_ALIASES = {
     "temperature_average": ["temperature_average", "Tavg", "Tmean", "temperature", "temp_avg"],
     "temperature_minimum": ["temperature_minimum", "Tmin", "temp_min"],
     "temperature_maximum": ["temperature_maximum", "Tmax", "temp_max"],
+    "charge_duration": ["charge_duration", "chargetime", "charge_time", "chargeTime"],
 }
 
 
@@ -131,6 +132,133 @@ def _h5_to_python(obj: Any, root: Optional[h5py.File] = None) -> Any:
     return obj
 
 
+def _h5_is_ref_array(obj: Any) -> bool:
+    dtype = getattr(obj, "dtype", None)
+    if dtype is None and isinstance(obj, h5py.Dataset):
+        dtype = obj.dtype
+    if dtype is None:
+        return False
+    if h5py.check_dtype(ref=dtype) is not None:
+        return True
+    try:
+        arr = np.asarray(obj)
+    except Exception:
+        return False
+    return arr.dtype == object and any(isinstance(value, h5py.Reference) for value in arr.ravel())
+
+
+def _h5_deref(h5file: h5py.File, value: Any) -> Any:
+    if isinstance(value, (h5py.Group, h5py.Dataset)):
+        return value
+    if isinstance(value, h5py.Reference):
+        try:
+            if not value:
+                return None
+            return h5file[value]
+        except Exception:
+            return None
+    if isinstance(value, np.ndarray):
+        flat = value.ravel(order="F")
+        if flat.size == 1:
+            return _h5_deref(h5file, flat[0])
+    return value
+
+
+def _h5_read_dataset(h5file: h5py.File, dataset_or_ref: Any) -> Any:
+    obj = _h5_deref(h5file, dataset_or_ref)
+    if isinstance(obj, h5py.Dataset):
+        return obj[()]
+    return obj
+
+
+def _h5_decode_matlab_string(h5file: h5py.File, dataset_or_ref: Any) -> Optional[str]:
+    data = _h5_read_dataset(h5file, dataset_or_ref)
+    if data is None or isinstance(data, h5py.Group):
+        return None
+    if isinstance(data, bytes):
+        return data.decode("utf-8", errors="replace").strip()
+    arr = np.asarray(data)
+    if arr.size == 0:
+        return None
+    if arr.dtype.kind in {"S", "U"}:
+        return "".join(str(_decode_bytes(item)) for item in arr.ravel(order="F")).strip()
+    if np.issubdtype(arr.dtype, np.integer):
+        chars = []
+        for value in arr.ravel(order="F"):
+            code = int(value)
+            if code > 0:
+                try:
+                    chars.append(chr(code))
+                except ValueError:
+                    return None
+        text = "".join(chars).strip()
+        return text or None
+    return str(arr.squeeze()).strip()
+
+
+def _h5_numeric_array(h5file: h5py.File, dataset_or_ref: Any) -> np.ndarray:
+    obj = _h5_deref(h5file, dataset_or_ref)
+    if obj is None or isinstance(obj, h5py.Group):
+        return np.asarray([], dtype=float)
+    if isinstance(obj, h5py.Dataset) and _h5_is_ref_array(obj):
+        values: List[float] = []
+        for ref in np.asarray(obj[()]).ravel(order="F"):
+            values.extend(_safe_numeric_vector(_h5_read_dataset(h5file, ref)).tolist())
+        return np.asarray(values, dtype=float)
+    return _safe_numeric_vector(_h5_read_dataset(h5file, obj))
+
+
+def _h5_get_field_at(h5file: h5py.File, batch_group: h5py.Group, field_name: str, idx: int) -> Any:
+    if not isinstance(batch_group, h5py.Group) or field_name not in batch_group:
+        return None
+    field = batch_group[field_name]
+    if isinstance(field, h5py.Dataset):
+        data = field[()]
+        flat = np.asarray(data).ravel(order="F")
+        if flat.size == 0:
+            return None
+        if _h5_is_ref_array(field):
+            if idx >= flat.size:
+                return None
+            return _h5_deref(h5file, flat[idx])
+        if flat.size == 1:
+            return flat[0]
+        if idx >= flat.size:
+            return None
+        return flat[idx]
+    if isinstance(field, h5py.Group):
+        return field
+    return None
+
+
+def _h5_infer_struct_array_length(batch_group: Any) -> int:
+    if isinstance(batch_group, h5py.Dataset):
+        try:
+            return int(np.asarray(batch_group[()]).size)
+        except Exception:
+            return 0
+    if not isinstance(batch_group, h5py.Group):
+        return 0
+    sizes = []
+    preferred_fields = ["cycle_life", "summary", "cycles", "policy", "barcode"]
+    field_names = [name for name in preferred_fields if name in batch_group] + [
+        name for name in batch_group.keys() if name not in preferred_fields
+    ]
+    for name in field_names:
+        obj = batch_group[name]
+        if not isinstance(obj, h5py.Dataset):
+            continue
+        try:
+            arr = np.asarray(obj[()])
+        except Exception:
+            continue
+        if arr.size > 1:
+            sizes.append(int(arr.size))
+    if not sizes:
+        return 1 if len(batch_group.keys()) else 0
+    return int(Counter(sizes).most_common(1)[0][0])
+
+
 def load_matr_file(path: Union[str, Path]) -> MatLoadResult:
     mat_path = Path(path)
     try:
@@ -144,7 +272,10 @@ def load_matr_file(path: Union[str, Path]) -> MatLoadResult:
     try:
         with h5py.File(mat_path, "r") as handle:
             keys = sorted(handle.keys())
-            data = {key: _h5_to_python(handle[key], handle) for key in keys}
+            # MATLAB v7.3 files use HDF5 object-reference structs. Avoid eagerly
+            # materializing #refs# here; Severson cells are parsed by a dedicated
+            # h5py path that indexes the struct arrays field by field.
+            data = {}
         return MatLoadResult(path=mat_path, load_method="h5py.File", keys=keys, data=data, warnings=warnings)
     except Exception as exc:
         return MatLoadResult(
@@ -525,11 +656,158 @@ def _cycles_interpolated_from_cell(cell: Dict[str, Any], first_n_cycles: Optiona
     return _records_to_cycles_interpolated(records, first_n_cycles), warnings
 
 
+def _h5_group_field_mapping(h5file: h5py.File, group_or_ref: Any) -> Dict[str, Any]:
+    obj = _h5_deref(h5file, group_or_ref)
+    if not isinstance(obj, h5py.Group):
+        return {}
+    mapping: Dict[str, Any] = {}
+    for key in obj.keys():
+        child = obj[key]
+        if isinstance(child, h5py.Group):
+            mapping[key] = _h5_group_field_mapping(h5file, child)
+        elif isinstance(child, h5py.Dataset):
+            if _h5_is_ref_array(child):
+                refs = np.asarray(child[()]).ravel(order="F")
+                if refs.size == 1:
+                    target = _h5_deref(h5file, refs[0])
+                    if isinstance(target, h5py.Group):
+                        mapping[key] = _h5_group_field_mapping(h5file, target)
+                    else:
+                        mapping[key] = _h5_read_dataset(h5file, target)
+                else:
+                    values = []
+                    for ref in refs:
+                        target = _h5_deref(h5file, ref)
+                        if isinstance(target, h5py.Group):
+                            values.append(_h5_group_field_mapping(h5file, target))
+                        else:
+                            values.append(_h5_read_dataset(h5file, target))
+                    mapping[key] = values
+            else:
+                mapping[key] = child[()]
+    return mapping
+
+
+def _h5_cycles_records(h5file: h5py.File, cycles_or_ref: Any, first_n_cycles: Optional[int]) -> List[Tuple[int, Dict[str, Any]]]:
+    obj = _h5_deref(h5file, cycles_or_ref)
+    records: List[Tuple[int, Dict[str, Any]]] = []
+    if obj is None:
+        return records
+    if isinstance(obj, h5py.Dataset) and _h5_is_ref_array(obj):
+        refs = np.asarray(obj[()]).ravel(order="F")
+        limit = refs.size if first_n_cycles is None else min(refs.size, int(first_n_cycles))
+        for idx in range(limit):
+            target = _h5_deref(h5file, refs[idx])
+            if isinstance(target, h5py.Group):
+                record = _h5_group_field_mapping(h5file, target)
+                record.setdefault("cycle_index", idx)
+                records.append((idx, record))
+        return records
+    if isinstance(obj, h5py.Group):
+        n_cycles = _h5_infer_struct_array_length(obj)
+        limit = n_cycles if first_n_cycles is None else min(n_cycles, int(first_n_cycles))
+        for idx in range(limit):
+            record: Dict[str, Any] = {}
+            for key in obj.keys():
+                record[key] = _h5_get_field_at(h5file, obj, key, idx)
+            record.setdefault("cycle_index", idx)
+            records.append((idx, record))
+        return records
+    return records
+
+
+def _h5_cell_string_field(h5file: h5py.File, batch_group: h5py.Group, idx: int, names: List[str]) -> Optional[str]:
+    for name in names:
+        if name not in batch_group:
+            continue
+        value = _h5_get_field_at(h5file, batch_group, name, idx)
+        text = _h5_decode_matlab_string(h5file, value)
+        if text:
+            return text
+    return None
+
+
+def _severson_cells_from_h5_file(path: Path, loaded: MatLoadResult, first_n_cycles: Optional[int]) -> List[SeversonCell]:
+    cells: List[SeversonCell] = []
+    source_batch = _source_batch_from_path(path)
+    with h5py.File(path, "r") as handle:
+        if "batch" not in handle:
+            loaded.warnings.append("h5py.File parse failed: top-level 'batch' group missing")
+            return cells
+        batch = handle["batch"]
+        if not isinstance(batch, h5py.Group):
+            loaded.warnings.append("h5py.File parse failed: top-level 'batch' is not an HDF5 group")
+            return cells
+        n_cells = _h5_infer_struct_array_length(batch)
+        if n_cells <= 0:
+            loaded.warnings.append("h5py.File parse failed: could not infer batch struct-array length")
+            return cells
+        for idx in range(n_cells):
+            cell_warnings: List[str] = []
+            life_value = None
+            life_key = None
+            for key in LIFE_KEYS:
+                if key in batch:
+                    life_key = key
+                    life_value = _h5_get_field_at(handle, batch, key, idx)
+                    break
+            cycle_life = _numeric_scalar(_h5_read_dataset(handle, life_value))
+            summary_ref = _h5_get_field_at(handle, batch, "summary", idx)
+            summary_mapping = _h5_group_field_mapping(handle, summary_ref)
+            try:
+                summary, summary_df, summary_warnings = _summary_from_cell({"summary": summary_mapping}, first_n_cycles=first_n_cycles)
+            except Exception as exc:
+                summary, summary_df = {}, pd.DataFrame()
+                summary_warnings = [f"summary_parse_failed: {type(exc).__name__}: {exc}"]
+            cycles_interpolated: Dict[str, Any] = {}
+            cycle_warnings: List[str] = []
+            if "cycles" in batch:
+                try:
+                    cycles_ref = _h5_get_field_at(handle, batch, "cycles", idx)
+                    cycle_records = _h5_cycles_records(handle, cycles_ref, first_n_cycles)
+                    cycles_interpolated = _records_to_cycles_interpolated(cycle_records, first_n_cycles)
+                except Exception as exc:
+                    cycles_interpolated = {}
+                    cycle_warnings = [f"cycles_parse_failed_nonfatal: {type(exc).__name__}: {exc}"]
+            else:
+                cycle_warnings = ["cycles_interpolated/cycles are unavailable"]
+            if not cycles_interpolated:
+                cycle_warnings = list(cycle_warnings) + ["curve_fields_unavailable"]
+            barcode = _h5_cell_string_field(handle, batch, idx, ["barcode", "cell_id", "CellID"])
+            channel = _h5_cell_string_field(handle, batch, idx, ["channel_id", "channel"])
+            policy = _h5_cell_string_field(handle, batch, idx, ["policy", "protocol"])
+            cell_id = f"severson_{source_batch}_cell_{idx:03d}"
+            metadata = {
+                "barcode": barcode,
+                "channel": channel,
+                "policy": policy,
+                "life_key": life_key,
+                "n_summary_cycles": int(len(summary_df)),
+                "has_cycles_interpolated": bool(cycles_interpolated),
+            }
+            cells.append(
+                SeversonCell(
+                    source_file=path.name,
+                    source_batch=source_batch,
+                    source_cell_index=idx,
+                    cell_id=cell_id,
+                    cycle_life=cycle_life,
+                    metadata=metadata,
+                    summary=summary,
+                    cycles_interpolated=cycles_interpolated,
+                    warnings=loaded.warnings + cell_warnings + summary_warnings + cycle_warnings,
+                )
+            )
+    return cells
+
+
 def severson_cells_from_file(path: Union[str, Path], first_n_cycles: Optional[int] = None) -> Tuple[List[SeversonCell], MatLoadResult]:
     mat_path = Path(path)
     loaded = load_matr_file(mat_path)
     if loaded.load_method == "failed":
         return [], loaded
+    if loaded.load_method == "h5py.File":
+        return _severson_cells_from_h5_file(mat_path, loaded, first_n_cycles), loaded
     raw_cells = _cell_objects_from_data(loaded.data)
     cells: List[SeversonCell] = []
     source_batch = _source_batch_from_path(mat_path)
