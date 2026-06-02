@@ -71,6 +71,7 @@ def write_toy_severson_h5_mat_dir(
     n_cells_per_file: int = 2,
     n_cycles: int = 120,
     include_ragged_cycles: bool = True,
+    invalid_barcode: bool = False,
 ) -> Path:
     mat_dir = base / "severson_matr_h5"
     mat_dir.mkdir(parents=True, exist_ok=True)
@@ -89,6 +90,7 @@ def write_toy_severson_h5_mat_dir(
             summary_refs = np.empty((1, n_cells_per_file), dtype=ref_dtype)
             cycles_refs = np.empty((1, n_cells_per_file), dtype=ref_dtype)
             policy_refs = np.empty((1, n_cells_per_file), dtype=ref_dtype)
+            barcode_refs = np.empty((1, n_cells_per_file), dtype=ref_dtype)
             for cell_idx in range(n_cells_per_file):
                 cycles = np.arange(n_cycles)
                 qd = 1.12 - 0.001 * cycles - 0.003 * cell_idx - 0.002 * file_idx
@@ -128,8 +130,14 @@ def write_toy_severson_h5_mat_dir(
                 cycles_refs[0, cell_idx] = cycles_group.ref
                 policy = _h5_char_dataset(refs, f"policy_{cell_idx}", f"policy_{cell_idx % 2}")
                 policy_refs[0, cell_idx] = policy.ref
+                if invalid_barcode:
+                    barcode = refs.create_dataset(f"barcode_{cell_idx}", data=np.asarray([[np.iinfo(np.uint64).max]], dtype=np.uint64))
+                else:
+                    barcode = _h5_char_dataset(refs, f"barcode_{cell_idx}", f"barcode_{cell_idx:03d}")
+                barcode_refs[0, cell_idx] = barcode.ref
             batch.create_dataset("cycle_life", data=life_refs)
             batch.create_dataset("summary", data=summary_refs)
             batch.create_dataset("cycles", data=cycles_refs)
             batch.create_dataset("policy", data=policy_refs)
+            batch.create_dataset("barcode", data=barcode_refs)
     return mat_dir

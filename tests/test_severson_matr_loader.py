@@ -4,7 +4,15 @@ import json
 import subprocess
 import sys
 
-from battery_aar.features.severson_matr import audit_severson_mat_dir, severson_cells_from_file
+import h5py
+import numpy as np
+
+from battery_aar.features.severson_matr import (
+    _h5_cell_string_field,
+    _h5_decode_matlab_string,
+    audit_severson_mat_dir,
+    severson_cells_from_file,
+)
 
 from .severson_test_utils import write_toy_severson_h5_mat_dir, write_toy_severson_mat_dir
 
@@ -64,6 +72,39 @@ def test_severson_h5_audit_counts_referenced_cells(tmp_path):
     assert file_report["cycle_life_max"] == 705.0
     assert file_report["cells_with_first_100_cycles"] == 2
     assert file_report["field_availability"]["discharge_capacity"] is True
+
+
+def test_h5_decode_matlab_string_huge_integer_returns_none(tmp_path):
+    path = tmp_path / "bad_string.mat"
+    with h5py.File(path, "w") as handle:
+        dataset = handle.create_dataset("bad", data=np.asarray([[np.iinfo(np.uint64).max]], dtype=np.uint64))
+        assert _h5_decode_matlab_string(handle, dataset) is None
+
+
+def test_h5_cell_string_field_bad_barcode_is_nonfatal(tmp_path):
+    mat_dir = write_toy_severson_h5_mat_dir(tmp_path, n_files=1, n_cells_per_file=1, invalid_barcode=True)
+    path = next(mat_dir.glob("*.mat"))
+    warnings = []
+    with h5py.File(path, "r") as handle:
+        text = _h5_cell_string_field(handle, handle["batch"], 0, ["barcode"], warnings)
+
+    assert text is None
+    assert any("barcode_decode_failed_nonfatal" in warning for warning in warnings)
+
+
+def test_severson_h5_invalid_barcode_uses_fallback_cell_id(tmp_path):
+    mat_dir = write_toy_severson_h5_mat_dir(tmp_path, n_files=1, n_cells_per_file=1, invalid_barcode=True)
+    path = next(mat_dir.glob("*.mat"))
+    cells, loaded = severson_cells_from_file(path, first_n_cycles=100)
+
+    assert loaded.load_method == "h5py.File"
+    assert len(cells) == 1
+    cell = cells[0]
+    assert cell.cycle_life == 700.0
+    assert cell.cell_id == f"{path.stem}_cell_000"
+    assert cell.metadata["barcode"] is None
+    assert len(cell.summary["cycle_index"]) == 100
+    assert any("barcode_decode_failed_nonfatal" in warning for warning in cell.warnings)
 
 
 def test_audit_severson_matr_data_script_writes_reports(tmp_path):

@@ -176,24 +176,47 @@ def _h5_decode_matlab_string(h5file: h5py.File, dataset_or_ref: Any) -> Optional
     if data is None or isinstance(data, h5py.Group):
         return None
     if isinstance(data, bytes):
-        return data.decode("utf-8", errors="replace").strip()
+        text = data.decode("utf-8", errors="replace").strip()
+        return text or None
     arr = np.asarray(data)
     if arr.size == 0:
         return None
+    if arr.dtype == object or h5py.check_dtype(ref=arr.dtype) is not None:
+        decoded_parts = []
+        for ref in arr.ravel(order="F"):
+            text = _h5_decode_matlab_string(h5file, ref)
+            if text:
+                decoded_parts.append(text)
+        text = "".join(decoded_parts).strip()
+        return text or None
     if arr.dtype.kind in {"S", "U"}:
-        return "".join(str(_decode_bytes(item)) for item in arr.ravel(order="F")).strip()
+        text = "".join(str(_decode_bytes(item)) for item in arr.ravel(order="F")).strip()
+        return text or None
+    if arr.dtype == np.uint8:
+        values = arr.ravel(order="F")
+        values = values[values > 0]
+        if values.size == 0:
+            return None
+        try:
+            text = bytes(int(value) for value in values if int(value) <= 255).decode("utf-8", errors="replace").strip()
+        except Exception:
+            return None
+        return text or None
     if np.issubdtype(arr.dtype, np.integer):
         chars = []
         for value in arr.ravel(order="F"):
             code = int(value)
-            if code > 0:
-                try:
-                    chars.append(chr(code))
-                except ValueError:
-                    return None
+            if code <= 0:
+                continue
+            if code > 0x10FFFF:
+                return None
+            char = chr(code)
+            if not char.isprintable():
+                continue
+            chars.append(char)
         text = "".join(chars).strip()
         return text or None
-    return str(arr.squeeze()).strip()
+    return None
 
 
 def _h5_numeric_array(h5file: h5py.File, dataset_or_ref: Any) -> np.ndarray:
@@ -716,14 +739,33 @@ def _h5_cycles_records(h5file: h5py.File, cycles_or_ref: Any, first_n_cycles: Op
     return records
 
 
-def _h5_cell_string_field(h5file: h5py.File, batch_group: h5py.Group, idx: int, names: List[str]) -> Optional[str]:
+def _h5_cell_string_field(
+    h5file: h5py.File,
+    batch_group: h5py.Group,
+    idx: int,
+    names: List[str],
+    warnings: Optional[List[str]] = None,
+) -> Optional[str]:
     for name in names:
         if name not in batch_group:
             continue
         value = _h5_get_field_at(h5file, batch_group, name, idx)
-        text = _h5_decode_matlab_string(h5file, value)
+        try:
+            text = _h5_decode_matlab_string(h5file, value)
+        except Exception as exc:
+            if warnings is not None:
+                if name in {"barcode", "cell_id", "CellID"}:
+                    warnings.append(f"barcode_decode_failed_nonfatal: {type(exc).__name__}: {exc}")
+                warnings.append(f"optional_metadata_decode_failed_nonfatal: {name}: {type(exc).__name__}: {exc}")
+            return None
         if text:
             return text
+        if warnings is not None:
+            if name in {"barcode", "cell_id", "CellID"}:
+                warnings.append(f"barcode_decode_failed_nonfatal: {name}: undecodable optional metadata")
+            else:
+                warnings.append(f"optional_metadata_decode_failed_nonfatal: {name}: undecodable optional metadata")
+            return None
     return None
 
 
@@ -773,10 +815,10 @@ def _severson_cells_from_h5_file(path: Path, loaded: MatLoadResult, first_n_cycl
                 cycle_warnings = ["cycles_interpolated/cycles are unavailable"]
             if not cycles_interpolated:
                 cycle_warnings = list(cycle_warnings) + ["curve_fields_unavailable"]
-            barcode = _h5_cell_string_field(handle, batch, idx, ["barcode", "cell_id", "CellID"])
-            channel = _h5_cell_string_field(handle, batch, idx, ["channel_id", "channel"])
-            policy = _h5_cell_string_field(handle, batch, idx, ["policy", "protocol"])
-            cell_id = f"severson_{source_batch}_cell_{idx:03d}"
+            barcode = _h5_cell_string_field(handle, batch, idx, ["barcode", "cell_id", "CellID"], cell_warnings)
+            channel = _h5_cell_string_field(handle, batch, idx, ["channel_id", "channel"], cell_warnings)
+            policy = _h5_cell_string_field(handle, batch, idx, ["policy", "protocol"], cell_warnings)
+            cell_id = str(barcode).strip() if barcode else f"{path.stem}_cell_{idx:03d}"
             metadata = {
                 "barcode": barcode,
                 "channel": channel,
