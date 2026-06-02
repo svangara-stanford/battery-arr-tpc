@@ -10,7 +10,7 @@ from battery_aar.features.feature_programs import build_feature_program_table, c
 from battery_aar.features.program_library import make_attia_severson_like_program, make_broad_physics_program, make_minimal_debug_program
 from battery_aar.workflows.schemas import FeatureOperatorSpec, FeatureProgram
 
-from .feature_program_test_utils import toy_raw_payload, write_toy_feature_manifest
+from .feature_program_test_utils import toy_raw_payload, write_toy_feature_manifest, write_toy_raw_cell
 
 
 def _precision_loss_warnings(caught):
@@ -80,6 +80,66 @@ def test_feature_program_compiler_records_exclusion_for_bad_raw_file(tmp_path):
     assert result.n_rows == 1
     assert result.n_excluded_cells == 1
     assert "JSONDecodeError" in exclusions.loc[0, "reason"]
+
+
+def test_feature_program_rebases_stale_absolute_battery_fast_charging_source_path(tmp_path):
+    raw_root = tmp_path / "battery-fast-charging"
+    batch_id = "2018-08-28_oed_0"
+    raw_file = write_toy_raw_cell(raw_root / "data" / batch_id / f"{batch_id}_CH17_structure.json")
+    stale_source_path = (
+        f"/other/machine/not-this-repo/battery-fast-charging/data/{batch_id}/{raw_file.name}"
+    )
+    manifest = pd.DataFrame(
+        [
+            {
+                "row_id": 17,
+                "cell_id": f"{batch_id}_CH17",
+                "source_cell_id": f"{batch_id}_CH17",
+                "batch_id": batch_id,
+                "source_path": stale_source_path,
+            }
+        ]
+    )
+
+    result = build_feature_program_table(make_minimal_debug_program(), manifest, raw_root=raw_root, out_dir=tmp_path / "rebased")
+    table = pd.read_csv(result.feature_table_path)
+    card = json.loads((tmp_path / "rebased" / "dataset_card.json").read_text())
+    source_audit = pd.read_csv(tmp_path / "rebased" / "source_path_resolution.csv")
+
+    assert result.n_rows == 1
+    assert result.n_excluded_cells == 0
+    assert "resolved_source_path" not in table.columns
+    assert card["source_paths_rebased"] == 1
+    assert card["source_paths_used_directly"] == 0
+    assert source_audit.loc[0, "source_path_resolution_method"] == "rebased"
+    assert Path(source_audit.loc[0, "resolved_source_path"]) == raw_file
+
+
+def test_feature_program_reconstructs_source_path_from_batch_and_source_cell_id(tmp_path):
+    raw_root = tmp_path / "battery-fast-charging"
+    batch_id = "2018-09-02_oed_1"
+    raw_file = write_toy_raw_cell(raw_root / "data" / batch_id / f"{batch_id}_CH03_structure.json")
+    manifest = pd.DataFrame(
+        [
+            {
+                "row_id": 3,
+                "cell_id": f"{batch_id}_CH03",
+                "source_cell_id": f"{batch_id}_CH03",
+                "batch_id": batch_id,
+                "source_path": "/other/machine/no-marker/missing.json",
+            }
+        ]
+    )
+
+    result = build_feature_program_table(make_minimal_debug_program(), manifest, raw_root=raw_root, out_dir=tmp_path / "reconstructed")
+    card = json.loads((tmp_path / "reconstructed" / "dataset_card.json").read_text())
+    source_audit = pd.read_csv(tmp_path / "reconstructed" / "source_path_resolution.csv")
+
+    assert result.n_rows == 1
+    assert result.n_excluded_cells == 0
+    assert card["source_paths_reconstructed"] == 1
+    assert source_audit.loc[0, "source_path_resolution_method"] == "reconstructed"
+    assert Path(source_audit.loc[0, "resolved_source_path"]) == raw_file
 
 
 def test_broad_physics_feature_program_emits_no_skew_precision_loss_runtime_warnings(tmp_path):

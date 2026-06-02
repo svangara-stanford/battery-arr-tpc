@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -21,6 +22,32 @@ from battery_aar.features.raw_cycles import (
 from battery_aar.features.schemas import FeatureProgram, FeatureProgramResult
 
 RAW_CYCLE_OPERATOR_TYPES = {"curve_shape", "cross_cycle_curve_delta"}
+RAW_ROOT_MARKER = "battery-fast-charging/"
+SOURCE_PATH_COLUMNS = ["source_path", "raw_file", "raw_path", "file_path", "path"]
+SOURCE_PATH_RESOLUTION_METHODS = ["direct", "rebased", "reconstructed", "unresolved"]
+
+
+@dataclass
+class RawPathResolution:
+    path: Optional[Path]
+    method: str
+    source_column: Optional[str] = None
+    original_source_path: Optional[str] = None
+    resolved_source_path: Optional[str] = None
+    attempted_paths: Optional[List[str]] = None
+
+    def to_audit_row(self, row: pd.Series, row_id: Optional[int], cell_id: Optional[str]) -> Dict[str, Any]:
+        return {
+            "row_id": row_id,
+            "cell_id": cell_id,
+            "batch_id": _clean_row_value(row, "batch_id"),
+            "source_cell_id": _clean_row_value(row, "source_cell_id"),
+            "source_column": self.source_column,
+            "source_path": self.original_source_path,
+            "resolved_source_path": self.resolved_source_path,
+            "source_path_resolution_method": self.method,
+            "attempted_paths": ";".join(self.attempted_paths or []),
+        }
 
 
 def _json_ready(value: Any) -> Any:
@@ -44,14 +71,151 @@ def _write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(_json_ready(payload), indent=2, sort_keys=True) + "\n")
 
 
-def _resolve_raw_path(row: pd.Series, raw_root: Union[str, Path]) -> Path:
-    for col in ["source_path", "raw_file", "raw_path", "file_path", "path"]:
-        if col in row.index and pd.notna(row[col]) and str(row[col]).strip():
-            path = Path(str(row[col]))
-            if path.is_absolute():
-                return path
-            return Path(raw_root) / path
-    raise ValueError("cell_manifest row requires source_path/raw_file/raw_path/file_path/path")
+def _clean_row_value(row: pd.Series, col: str) -> Optional[str]:
+    if col not in row.index or pd.isna(row[col]):
+        return None
+    value = str(row[col]).strip()
+    return value or None
+
+
+def _append_attempt(attempted: List[str], path: Path) -> None:
+    value = str(path)
+    if value not in attempted:
+        attempted.append(value)
+
+
+def _rebase_marker_path(path_text: str, raw_root: Path) -> Optional[Path]:
+    normalized = path_text.replace("\\", "/")
+    marker_idx = normalized.find(RAW_ROOT_MARKER)
+    if marker_idx < 0:
+        return None
+    suffix = normalized[marker_idx + len(RAW_ROOT_MARKER) :].strip("/")
+    if not suffix:
+        return None
+    return raw_root / Path(suffix)
+
+
+def _raw_data_root(raw_root: Path) -> Path:
+    return raw_root if raw_root.name == "data" else raw_root / "data"
+
+
+def _source_cell_name_candidates(batch_id: str, source_cell_id: str) -> List[str]:
+    raw = str(source_cell_id).strip()
+    if not raw:
+        return []
+    stem = Path(raw).stem if raw.endswith(".json") else raw
+    stems = [stem]
+    if stem.endswith("_structure"):
+        stems.append(stem[: -len("_structure")])
+    else:
+        stems.append(f"{stem}_structure")
+    if stem.startswith("CH"):
+        stems.extend([f"{batch_id}_{stem}", f"{batch_id}_{stem}_structure"])
+    seen: set[str] = set()
+    names: List[str] = []
+    for candidate in stems:
+        if not candidate:
+            continue
+        name = f"{candidate}.json"
+        if name not in seen:
+            names.append(name)
+            seen.add(name)
+    return names
+
+
+def _reconstruct_raw_path(row: pd.Series, raw_root: Path, attempted: List[str]) -> Optional[Path]:
+    batch_id = _clean_row_value(row, "batch_id")
+    if not batch_id:
+        return None
+    source_ids = [
+        _clean_row_value(row, "source_cell_id"),
+        _clean_row_value(row, "cell_id"),
+        _clean_row_value(row, "anonymized_cell_id"),
+    ]
+    source_ids = [value for value in source_ids if value]
+    if not source_ids:
+        return None
+    batch_dir = _raw_data_root(raw_root) / batch_id
+    for source_cell_id in source_ids:
+        for name in _source_cell_name_candidates(batch_id, source_cell_id):
+            candidate = batch_dir / name
+            _append_attempt(attempted, candidate)
+            if candidate.exists():
+                return candidate
+    return None
+
+
+def _resolve_raw_path(row: pd.Series, raw_root: Union[str, Path]) -> RawPathResolution:
+    root = Path(raw_root)
+    attempted: List[str] = []
+    first_source_column: Optional[str] = None
+    first_source_path: Optional[str] = None
+
+    for col in SOURCE_PATH_COLUMNS:
+        path_text = _clean_row_value(row, col)
+        if not path_text:
+            continue
+        if first_source_column is None:
+            first_source_column = col
+            first_source_path = path_text
+
+        path = Path(path_text).expanduser()
+        _append_attempt(attempted, path)
+        if path.exists():
+            return RawPathResolution(
+                path=path,
+                method="direct",
+                source_column=col,
+                original_source_path=path_text,
+                resolved_source_path=str(path),
+                attempted_paths=attempted,
+            )
+
+        rebased_from_marker = _rebase_marker_path(path_text, root)
+        if rebased_from_marker is not None:
+            _append_attempt(attempted, rebased_from_marker)
+            if rebased_from_marker.exists():
+                return RawPathResolution(
+                    path=rebased_from_marker,
+                    method="rebased",
+                    source_column=col,
+                    original_source_path=path_text,
+                    resolved_source_path=str(rebased_from_marker),
+                    attempted_paths=attempted,
+                )
+
+        if not path.is_absolute():
+            rebased_relative = root / path
+            _append_attempt(attempted, rebased_relative)
+            if rebased_relative.exists():
+                return RawPathResolution(
+                    path=rebased_relative,
+                    method="rebased",
+                    source_column=col,
+                    original_source_path=path_text,
+                    resolved_source_path=str(rebased_relative),
+                    attempted_paths=attempted,
+                )
+
+    reconstructed = _reconstruct_raw_path(row, root, attempted)
+    if reconstructed is not None:
+        return RawPathResolution(
+            path=reconstructed,
+            method="reconstructed",
+            source_column=first_source_column,
+            original_source_path=first_source_path,
+            resolved_source_path=str(reconstructed),
+            attempted_paths=attempted,
+        )
+
+    return RawPathResolution(
+        path=None,
+        method="unresolved",
+        source_column=first_source_column,
+        original_source_path=first_source_path,
+        resolved_source_path=None,
+        attempted_paths=attempted,
+    )
 
 
 def _operator_key(operator_name: str, operator_type: str) -> str:
@@ -155,6 +319,7 @@ def compile_feature_program(
 
 def _dataset_card_md(card: dict[str, Any]) -> str:
     family_counts = card.get("feature_family_counts", {})
+    path_counts = card.get("source_path_resolution_counts", {})
     lines = [
         "# Feature Program Dataset Card",
         "",
@@ -169,6 +334,14 @@ def _dataset_card_md(card: dict[str, Any]) -> str:
         f"true_curve_features_used: `{card.get('true_curve_features_used')}`",
         f"proxy_features_used: `{card.get('proxy_features_used')}`",
         f"protocol_features_used: `{card.get('protocol_features_used')}`",
+        "",
+        "## Source Path Resolution",
+        "",
+        f"- used_directly: `{card.get('source_paths_used_directly', path_counts.get('direct', 0))}`",
+        f"- rebased: `{card.get('source_paths_rebased', path_counts.get('rebased', 0))}`",
+        f"- reconstructed: `{card.get('source_paths_reconstructed', path_counts.get('reconstructed', 0))}`",
+        f"- unresolved: `{card.get('source_paths_unresolved', path_counts.get('unresolved', 0))}`",
+        f"- audit_file: `{card.get('source_path_resolution_path')}`",
         "",
         "## Feature Families",
         "",
@@ -196,14 +369,23 @@ def build_feature_program_table(
     feature_rows: list[dict[str, Any]] = []
     metadata_rows: list[dict[str, Any]] = []
     exclusions: list[dict[str, Any]] = []
+    source_path_rows: list[dict[str, Any]] = []
+    source_path_resolution_counts: Counter = Counter({method: 0 for method in SOURCE_PATH_RESOLUTION_METHODS})
     warning_rows: list[str] = []
     operator_status_counts: dict[str, Counter] = defaultdict(Counter)
     operator_warnings: dict[str, list[str]] = defaultdict(list)
     for _, row in cell_manifest.iterrows():
         row_id = int(row["row_id"]) if "row_id" in row and pd.notna(row["row_id"]) else None
         cell_id = str(row["cell_id"]) if "cell_id" in row and pd.notna(row["cell_id"]) else (f"cell_{row_id}" if row_id is not None else None)
+        resolution: Optional[RawPathResolution] = None
         try:
-            raw_path = _resolve_raw_path(row, raw_root)
+            resolution = _resolve_raw_path(row, raw_root)
+            source_path_resolution_counts[resolution.method] += 1
+            source_path_rows.append(resolution.to_audit_row(row, row_id, cell_id))
+            if resolution.path is None:
+                attempted = ", ".join(resolution.attempted_paths or [])
+                raise FileNotFoundError(f"could not resolve raw source path; attempted: {attempted or 'none'}")
+            raw_path = resolution.path
             payload = load_attia_json_payload(raw_path)
             features, metadata, warnings, statuses = _compile_feature_program_detailed(
                 program,
@@ -222,7 +404,23 @@ def build_feature_program_table(
             warning_rows.extend([f"{cell_id}: {warning}" for warning in warnings])
         except Exception as exc:
             reason = f"{type(exc).__name__}: {exc}"
-            exclusions.append({"row_id": row_id, "cell_id": cell_id, "exclusion_stage": "feature_program_compile", "reason": reason})
+            if resolution is None:
+                resolution = _resolve_raw_path(row, raw_root)
+                source_path_resolution_counts[resolution.method] += 1
+                source_path_rows.append(resolution.to_audit_row(row, row_id, cell_id))
+            exclusions.append(
+                {
+                    "row_id": row_id,
+                    "cell_id": cell_id,
+                    "batch_id": _clean_row_value(row, "batch_id"),
+                    "source_cell_id": _clean_row_value(row, "source_cell_id"),
+                    "source_path": resolution.original_source_path,
+                    "resolved_source_path": resolution.resolved_source_path,
+                    "source_path_resolution_method": resolution.method,
+                    "exclusion_stage": "feature_program_compile",
+                    "reason": reason,
+                }
+            )
             if strict:
                 raise
     feature_table = pd.DataFrame(feature_rows)
@@ -277,11 +475,39 @@ def build_feature_program_table(
     program_path = out / "feature_program.json"
     result_path = out / "feature_program_result.json"
     exclusions_path = out / "exclusions.csv"
+    source_path_resolution_path = out / "source_path_resolution.csv"
     dataset_card_path = out / "dataset_card.json"
     dataset_card_md_path = out / "dataset_card.md"
     feature_table.to_csv(feature_table_path, index=False)
     feature_metadata.to_csv(feature_metadata_path, index=False)
-    pd.DataFrame(exclusions, columns=["row_id", "cell_id", "exclusion_stage", "reason"]).to_csv(exclusions_path, index=False)
+    pd.DataFrame(
+        exclusions,
+        columns=[
+            "row_id",
+            "cell_id",
+            "batch_id",
+            "source_cell_id",
+            "source_path",
+            "resolved_source_path",
+            "source_path_resolution_method",
+            "exclusion_stage",
+            "reason",
+        ],
+    ).to_csv(exclusions_path, index=False)
+    pd.DataFrame(
+        source_path_rows,
+        columns=[
+            "row_id",
+            "cell_id",
+            "batch_id",
+            "source_cell_id",
+            "source_column",
+            "source_path",
+            "resolved_source_path",
+            "source_path_resolution_method",
+            "attempted_paths",
+        ],
+    ).to_csv(source_path_resolution_path, index=False)
     _write_json(program_path, program)
     table_warnings = validate_feature_table(feature_table)
     metadata_warnings = validate_feature_metadata(feature_metadata)
@@ -325,6 +551,12 @@ def build_feature_program_table(
         "protocol_features_used": bool(feature_metadata.get("uses_protocol", pd.Series(dtype=bool)).fillna(False).astype(bool).any()),
         "warnings_count": int(len(warnings)),
         "exclusions_count": int(len(exclusions)),
+        "source_path_resolution_path": str(source_path_resolution_path),
+        "source_path_resolution_counts": {method: int(source_path_resolution_counts.get(method, 0)) for method in SOURCE_PATH_RESOLUTION_METHODS},
+        "source_paths_used_directly": int(source_path_resolution_counts.get("direct", 0)),
+        "source_paths_rebased": int(source_path_resolution_counts.get("rebased", 0)),
+        "source_paths_reconstructed": int(source_path_resolution_counts.get("reconstructed", 0)),
+        "source_paths_unresolved": int(source_path_resolution_counts.get("unresolved", 0)),
     }
     _write_json(dataset_card_path, dataset_card)
     dataset_card_md_path.write_text(_dataset_card_md(dataset_card))
