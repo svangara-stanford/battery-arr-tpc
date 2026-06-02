@@ -104,6 +104,7 @@ class ModelPlan(ArtifactBase):
     iteration: int | None = None
     model_family: str
     estimator_name: str | None = None
+    target_transform: str = "raw"
     hyperparameters: dict[str, Any] = Field(default_factory=dict)
     preprocessing_steps: list[str] = Field(default_factory=list)
     rationale: str | None = None
@@ -119,9 +120,16 @@ class CandidateSpec(ArtifactBase):
     candidate_name: str | None = None
     code_sha256: str | None = None
     uses_toolbox: bool = False
+    compiled_candidate: bool | None = None
     declared_dependencies: list[str] = Field(default_factory=list)
     feature_plan_artifact_id: str | None = None
     model_plan_artifact_id: str | None = None
+    feature_families: list[str] = Field(default_factory=list)
+    include_protocol_features: bool = False
+    model_family: str | None = None
+    target_transform: str = "raw"
+    preprocessing: list[str] = Field(default_factory=list)
+    hyperparameters: dict[str, Any] = Field(default_factory=dict)
 
 
 class ReviewReport(ArtifactBase):
@@ -155,6 +163,7 @@ class EvaluationReport(ArtifactBase):
     traceback: str | None = None
     stdout_excerpt: str | None = None
     stderr_excerpt: str | None = None
+    prediction_path: str | None = None
     extra_metrics: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -190,7 +199,14 @@ class ExperimentState(ArtifactBase):
     candidate_count: int
     successful_candidate_count: int
     best_candidate_path: str | None = None
+    best_candidate_id: str | None = None
+    best_iteration: int | None = None
     best_metrics: dict[str, Any] = Field(default_factory=dict)
+    all_candidate_metrics: list[dict[str, Any]] = Field(default_factory=list)
+    final_batch9_metrics_path: str | None = None
+    final_batch9_predictions_path: str | None = None
+    final_batch9_topk_metrics_path: str | None = None
+    best_locked_validation_candidate_path: str | None = None
     leaderboard_path: str | None = None
     artifact_index_path: str | None = None
     output_paths: dict[str, str] = Field(default_factory=dict)

@@ -42,6 +42,9 @@ Strong plans should consider author-inspired but coefficient-free feature famili
 - log-transformed difference-statistic proxies
 - protocol-current features only when allowed
 
+The literature early predictor modeled log10(cycle life). Feature plans can support either raw cycle-life
+models or log10 target modeling; the ModelArchitect chooses the target transform.
+
 Dataset profile:
 {_json_block(dataset_profile)}
 
@@ -58,6 +61,8 @@ def model_architect_prompt(feature_plan: dict[str, Any], dataset_profile: dict[s
 
 Use robust preprocessing. Prefer Ridge, ElasticNet, ElasticNetCV, RandomForest, or GradientBoosting over neural networks.
 Candidates must drop all-NaN features or impute safely and must not use row_id/cell_id as predictors.
+The literature early predictor modeled log10(cycle life). For positive lifetime targets, log10 target modeling
+may improve stability under batch shifts. Choose target_transform as either "raw" or "log10" and justify the choice.
 
 Feature plan:
 {_json_block(feature_plan)}
@@ -66,7 +71,7 @@ Dataset profile:
 {_json_block(dataset_profile)}
 
 Return JSON with keys:
-agent_id, model_family, estimator_name, hyperparameters, preprocessing_steps, rationale
+agent_id, model_family, estimator_name, target_transform, hyperparameters, preprocessing_steps, rationale
 """
 
 
@@ -79,6 +84,15 @@ def predict(model, test_metadata, test_cycle_summary, config): ...
 You may import:
 from battery_aar.features.battery_lifetime_features import build_all_battery_features
 
+Recommended toolbox call pattern:
+
+X = build_all_battery_features(
+    metadata,
+    cycle_summary,
+    max_cycle=100,
+    include_protocol=True,
+)
+
 Candidate-facing schema:
 - train_metadata/test_metadata include row_id, cell_id, and allowed numeric physical/protocol columns.
 - train_cycle_summary/test_cycle_summary include row_id, cell_id, cycle_index, discharge_capacity, charge_capacity, and other allowed numeric early-cycle columns.
@@ -87,6 +101,8 @@ Candidate-facing schema:
 Rules:
 - Use row_id/cell_id only for joins and output alignment.
 - Do not use source paths, batch identifiers, hidden labels, reference predictions, or author model coefficients.
+- Do not invent additional keyword arguments for build_all_battery_features.
+- Use include_protocol=True or include_protocol=False, not include_protocol_features.
 - Handle NaNs and all-NaN columns safely.
 - Return predictions as DataFrame with row_id,y_pred or cell_id,y_pred.
 
@@ -97,6 +113,43 @@ Model plan:
 {_json_block(model_plan)}
 
 Return only Python code.
+'''
+
+
+def code_repair_prompt(feature_plan: dict[str, Any], model_plan: dict[str, Any], previous_code: str, error_message: str, traceback_text: str | None) -> str:
+    return f'''Repair this Python candidate while preserving the FeaturePlan and ModelPlan.
+
+The previous candidate failed review or evaluation.
+
+Error message:
+{error_message}
+
+Traceback:
+{traceback_text or ""}
+
+Use the exact toolbox call pattern when using the battery feature helper:
+
+X = build_all_battery_features(
+    metadata,
+    cycle_summary,
+    max_cycle=100,
+    include_protocol=True,
+)
+
+Do not invent additional keyword arguments. Use include_protocol, not include_protocol_features.
+
+Feature plan:
+{_json_block(feature_plan)}
+
+Model plan:
+{_json_block(model_plan)}
+
+Previous code:
+```python
+{previous_code}
+```
+
+Return only the complete repaired Python code.
 '''
 
 

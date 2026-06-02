@@ -270,14 +270,26 @@ def build_all_battery_features(
     metadata: pd.DataFrame,
     cycle_summary: pd.DataFrame,
     max_cycle: int = 100,
-    include_protocol: bool = True,
+    include_protocol: bool | None = None,
     return_feature_metadata: bool = False,
+    include_protocol_features: bool | None = None,
 ):
     """Build numeric author-inspired early-cycle features.
 
     The output feature dataframe contains numeric feature columns only. row_id
     or cell_id may appear as the index for alignment, but never as columns.
     """
+    if include_protocol is None and include_protocol_features is None:
+        use_protocol = True
+    elif include_protocol is None:
+        use_protocol = bool(include_protocol_features)
+    elif include_protocol_features is None:
+        use_protocol = bool(include_protocol)
+    else:
+        if bool(include_protocol) != bool(include_protocol_features):
+            raise ValueError("include_protocol and include_protocol_features disagree")
+        use_protocol = bool(include_protocol)
+
     capacity = build_capacity_summary_features(cycle_summary, max_cycle=max_cycle)
     curve = build_curve_difference_features(cycle_summary, max_cycle=max_cycle)
     parts = [capacity, curve]
@@ -285,7 +297,7 @@ def build_all_battery_features(
         _feature_metadata(capacity, "capacity_summary"),
         _feature_metadata(curve, "curve_difference_approximate", approximate=any(col.startswith("approx_") for col in curve.columns)),
     ]
-    if include_protocol:
+    if use_protocol:
         protocol = build_protocol_features(metadata)
         parts.append(protocol)
         metadata_rows.append(_feature_metadata(protocol, "protocol"))

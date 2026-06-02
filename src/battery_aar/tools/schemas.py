@@ -67,6 +67,7 @@ class CandidateReviewResponse(ToolResponseBase):
     verdict: str | None = None
     issues: list[str] = Field(default_factory=list)
     recommendations: list[str] = Field(default_factory=list)
+    failure_reason: str | None = None
 
 
 class CandidateEvaluateRequest(ToolRequestBase):
@@ -75,6 +76,7 @@ class CandidateEvaluateRequest(ToolRequestBase):
     cycle_summary_path: str
     labels_path: str | None = None
     split_assignments_path: str | None = None
+    split_mode: str = "tool_validation"
     max_cycle: int = 100
     allow_protocol_features: bool = False
     weak_rmse: float | None = None
@@ -85,7 +87,9 @@ class CandidateEvaluateRequest(ToolRequestBase):
 class CandidateEvaluateResponse(ToolResponseBase):
     metrics: dict[str, Any] = Field(default_factory=dict)
     n_eval: int | None = None
+    prediction_path: str | None = None
     failure_reason: str | None = None
+    traceback: str | None = None
 
 
 class RunCompareRequest(ToolRequestBase):

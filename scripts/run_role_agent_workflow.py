@@ -24,6 +24,13 @@ def main() -> int:
     parser.add_argument("--model", default=None)
     parser.add_argument("--max-cycle", type=int, default=100)
     parser.add_argument("--allow-protocol-features", action="store_true")
+    parser.add_argument("--allow-freeform-code", action="store_true")
+    parser.add_argument("--candidates-per-iteration", type=int, default=1)
+    parser.add_argument("--final-batch9-validation", action="store_true")
+    parser.add_argument("--locked-test", action="store_true", help="Alias for --final-batch9-validation.")
+    parser.add_argument("--battery-fast-charging-root", type=Path, default=None)
+    parser.add_argument("--batch9-path", type=Path, default=None)
+    parser.add_argument("--final-batch9-top-k", type=int, default=0)
     args = parser.parse_args()
 
     run_role_workflow(
@@ -42,6 +49,12 @@ def main() -> int:
         model=args.model,
         max_cycle=args.max_cycle,
         allow_protocol_features=args.allow_protocol_features,
+        allow_freeform_code=args.allow_freeform_code,
+        candidates_per_iteration=args.candidates_per_iteration,
+        final_batch9_validation=bool(args.final_batch9_validation or args.locked_test),
+        battery_fast_charging_root=args.battery_fast_charging_root,
+        batch9_path=args.batch9_path,
+        final_batch9_top_k=args.final_batch9_top_k,
     )
     return 0
 

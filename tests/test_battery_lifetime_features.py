@@ -63,6 +63,24 @@ def test_protocol_features_can_be_included_or_excluded():
     assert not any(col.startswith("protocol_") for col in without_protocol.columns)
 
 
+def test_feature_toolbox_accepts_include_protocol_features_alias():
+    metadata, cycles = _toy_tables()
+    features = build_all_battery_features(metadata, cycles, max_cycle=100, include_protocol_features=True)
+
+    assert any(col.startswith("protocol_") for col in features.columns)
+
+
+def test_feature_toolbox_rejects_disagreeing_protocol_aliases():
+    metadata, cycles = _toy_tables()
+
+    try:
+        build_all_battery_features(metadata, cycles, max_cycle=100, include_protocol=True, include_protocol_features=False)
+    except ValueError as exc:
+        assert "disagree" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for disagreeing protocol flags")
+
+
 def test_capacity_summary_handles_missing_cycles():
     _, cycles = _toy_tables()
     sparse = cycles[~cycles["cycle_index"].isin([50, 95, 98])]

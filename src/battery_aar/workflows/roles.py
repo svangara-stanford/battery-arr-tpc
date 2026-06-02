@@ -11,9 +11,11 @@ from typing import Any
 from battery_aar.agents.llm_client import load_llm_client_config
 from battery_aar.tools.client import HTTPToolClient, NativeToolClient
 from battery_aar.workflows.artifacts import ArtifactStore
+from battery_aar.workflows.candidate_compiler import candidate_spec_from_plans, compile_candidate_spec_to_python
 from battery_aar.workflows.role_prompts import (
     ROLE_SYSTEM_PROMPTS,
     code_generator_prompt,
+    code_repair_prompt,
     feature_scientist_prompt,
     model_architect_prompt,
     schema_repair_prompt,
@@ -85,7 +87,7 @@ def _llm_json(role_name: str, prompt: str, schema_hint: str, model: str | None =
         return _extract_json(repaired)
 
 
-def offline_candidate_code() -> str:
+def _default_toolbox_candidate_code() -> str:
     return r'''
 import numpy as np
 import pandas as pd
@@ -134,6 +136,14 @@ def predict(model, test_metadata, test_cycle_summary, config):
 '''
 
 
+def offline_candidate_code() -> str:
+    return _default_toolbox_candidate_code()
+
+
+def offline_repair_candidate_code() -> str:
+    return _default_toolbox_candidate_code()
+
+
 @dataclass
 class RoleContext:
     run_id: str
@@ -151,6 +161,8 @@ class RoleContext:
     store: ArtifactStore
     trace: TraceLogger
     tool_client: NativeToolClient | HTTPToolClient
+    allow_freeform_code: bool = False
+    candidates_per_iteration: int = 1
 
 
 class DatasetProfiler:
@@ -262,6 +274,7 @@ class ModelArchitect:
                 iteration=iteration,
                 model_family="linear_regularized",
                 estimator_name="Ridge",
+                target_transform="raw",
                 hyperparameters={"alpha": 1.0},
                 preprocessing_steps=["drop_all_nan_columns", "SimpleImputer(strategy='median')", "StandardScaler"],
                 rationale="Small surrogate datasets need a stable regularized baseline before more flexible models.",
@@ -270,7 +283,7 @@ class ModelArchitect:
             payload = _llm_json(
                 self.role_name,
                 model_architect_prompt(feature_plan.model_dump(mode="json"), dataset_profile),
-                "ModelPlan keys: agent_id, model_family, estimator_name, hyperparameters, preprocessing_steps, rationale",
+                "ModelPlan keys: agent_id, model_family, estimator_name, target_transform, hyperparameters, preprocessing_steps, rationale",
                 model=ctx.model,
             )
             plan = ModelPlan(
@@ -281,6 +294,7 @@ class ModelArchitect:
                 iteration=iteration,
                 model_family=str(payload.get("model_family") or "regularized_regression"),
                 estimator_name=payload.get("estimator_name"),
+                target_transform=str(payload.get("target_transform") or "raw"),
                 hyperparameters=payload.get("hyperparameters") if isinstance(payload.get("hyperparameters"), dict) else {},
                 preprocessing_steps=list(map(str, payload.get("preprocessing_steps", []))),
                 rationale=payload.get("rationale"),
@@ -301,37 +315,42 @@ class ModelArchitect:
 class CodeGenerator:
     role_name = "CodeGenerator"
 
-    def run(self, ctx: RoleContext, feature_plan: FeaturePlan, model_plan: ModelPlan, iteration: int) -> CandidateSpec:
-        started = time.perf_counter()
-        candidate_id = f"role_graph_iter_{iteration:03d}"
+    def _write_spec(
+        self,
+        ctx: RoleContext,
+        feature_plan: FeaturePlan,
+        model_plan: ModelPlan,
+        iteration: int,
+        candidate_id: str,
+        agent_id: str,
+        code: str,
+        started: float,
+    ) -> CandidateSpec:
         candidate_dir = ctx.run_dir / "candidates"
         candidate_dir.mkdir(parents=True, exist_ok=True)
         candidate_path = candidate_dir / f"{candidate_id}.py"
-        if ctx.offline:
-            code = offline_candidate_code()
-            response_text = "offline deterministic toolbox Ridge candidate"
-        else:
-            response_text = _call_llm(
-                self.role_name,
-                code_generator_prompt(feature_plan.model_dump(mode="json"), model_plan.model_dump(mode="json")),
-                model=ctx.model,
-            )
-            code = _strip_code_fences(response_text)
         candidate_path.write_text(code)
         spec = CandidateSpec(
             run_id=ctx.run_id,
             parent_artifact_ids=[feature_plan.artifact_id, model_plan.artifact_id],
             human_readable_summary="CodeGenerator produced a candidate Python file.",
             candidate_id=candidate_id,
-            agent_id="code_generator",
+            agent_id=agent_id,
             agent_role=AgentRole.LLM_CANDIDATE,
             iteration=iteration,
             candidate_path=str(candidate_path),
             candidate_name=candidate_id,
             code_sha256=_sha256_text(code),
             uses_toolbox="build_all_battery_features" in code,
+            compiled_candidate=False,
             feature_plan_artifact_id=feature_plan.artifact_id,
             model_plan_artifact_id=model_plan.artifact_id,
+            feature_families=list(feature_plan.feature_families),
+            include_protocol_features=bool(feature_plan.include_protocol_features),
+            model_family=model_plan.estimator_name or model_plan.model_family,
+            target_transform=model_plan.target_transform,
+            preprocessing=list(model_plan.preprocessing_steps),
+            hyperparameters=dict(model_plan.hyperparameters),
         )
         ctx.store.write_artifact(spec)
         ctx.trace.log_agent_message(
@@ -343,6 +362,145 @@ class CodeGenerator:
             output_artifact_ids=[spec.artifact_id],
             duration_ms=(time.perf_counter() - started) * 1000,
             message_summary=f"{spec.candidate_path} uses_toolbox={spec.uses_toolbox}",
+        )
+        return spec
+
+    def _compile_spec(self, ctx: RoleContext, feature_plan: FeaturePlan, model_plan: ModelPlan, iteration: int, candidate_id: str, agent_id: str, started: float) -> CandidateSpec:
+        candidate_dir = ctx.run_dir / "candidates"
+        candidate_dir.mkdir(parents=True, exist_ok=True)
+        candidate_path = candidate_dir / f"{candidate_id}.py"
+        spec = candidate_spec_from_plans(
+            run_id=ctx.run_id,
+            candidate_id=candidate_id,
+            agent_id=agent_id,
+            iteration=iteration,
+            candidate_path=candidate_path,
+            feature_plan=feature_plan,
+            model_plan=model_plan,
+        )
+        code = compile_candidate_spec_to_python(spec, candidate_path)
+        spec.code_sha256 = _sha256_text(code)
+        ctx.store.write_artifact(spec)
+        ctx.trace.log_agent_message(
+            event_type="candidate_compiled",
+            iteration=iteration,
+            agent_role=AgentRole.LLM_CANDIDATE,
+            agent_id=spec.agent_id,
+            input_artifact_ids=[feature_plan.artifact_id, model_plan.artifact_id],
+            output_artifact_ids=[spec.artifact_id],
+            duration_ms=(time.perf_counter() - started) * 1000,
+            message_summary=f"{spec.candidate_path} model_family={spec.model_family} feature_families={spec.feature_families}",
+        )
+        return spec
+
+    def _compiled_variants(self, ctx: RoleContext, feature_plan: FeaturePlan, model_plan: ModelPlan, iteration: int) -> list[tuple[str, FeaturePlan, ModelPlan]]:
+        n = max(1, int(ctx.candidates_per_iteration))
+        if n == 1:
+            return [(f"role_graph_iter_{iteration:03d}", feature_plan, model_plan)]
+        model_families = ["Ridge", "ElasticNetCV", "LassoCV", "RandomForestRegressor", "GradientBoostingRegressor"]
+        target_transforms = ["raw", "log10"]
+        include_protocol_options = [bool(feature_plan.include_protocol_features)]
+        if ctx.allow_protocol_features:
+            include_protocol_options = [True, False]
+        preferred_keys: list[tuple[str, str, bool]] = [
+            ("Ridge", str(model_plan.target_transform or "raw"), bool(feature_plan.include_protocol_features)),
+            ("Ridge", "log10", bool(feature_plan.include_protocol_features)),
+            ("ElasticNetCV", "raw", bool(feature_plan.include_protocol_features)),
+            ("RandomForestRegressor", "raw", False if ctx.allow_protocol_features else bool(feature_plan.include_protocol_features)),
+            ("GradientBoostingRegressor", "log10", bool(feature_plan.include_protocol_features)),
+            ("LassoCV", "log10", False if ctx.allow_protocol_features else bool(feature_plan.include_protocol_features)),
+        ]
+        all_keys = preferred_keys + [
+            (model_family, target_transform, include_protocol)
+            for target_transform in target_transforms
+            for include_protocol in include_protocol_options
+            for model_family in model_families
+        ]
+        variants: list[tuple[str, FeaturePlan, ModelPlan]] = []
+        seen: set[tuple[str, str, bool]] = set()
+        for model_family, target_transform, include_protocol in all_keys:
+            key = (model_family, target_transform, include_protocol)
+            if key in seen:
+                continue
+            seen.add(key)
+            candidate_id = f"role_graph_iter_{iteration:03d}_variant_{len(variants):02d}"
+            variant_feature_plan = feature_plan.model_copy(update={"include_protocol_features": include_protocol})
+            variant_model_plan = model_plan.model_copy(
+                update={
+                    "model_family": model_family,
+                    "estimator_name": model_family,
+                    "target_transform": target_transform,
+                }
+            )
+            variants.append((candidate_id, variant_feature_plan, variant_model_plan))
+            if len(variants) >= n:
+                return variants
+        return variants
+
+    def run(self, ctx: RoleContext, feature_plan: FeaturePlan, model_plan: ModelPlan, iteration: int) -> CandidateSpec:
+        started = time.perf_counter()
+        candidate_id = f"role_graph_iter_{iteration:03d}"
+        if not ctx.allow_freeform_code:
+            return self._compile_spec(ctx, feature_plan, model_plan, iteration, candidate_id, "code_generator", started)
+        if ctx.offline:
+            code = offline_candidate_code()
+        else:
+            response_text = _call_llm(
+                self.role_name,
+                code_generator_prompt(feature_plan.model_dump(mode="json"), model_plan.model_dump(mode="json")),
+                model=ctx.model,
+            )
+            code = _strip_code_fences(response_text)
+        return self._write_spec(ctx, feature_plan, model_plan, iteration, candidate_id, "code_generator", code, started)
+
+    def run_many(self, ctx: RoleContext, feature_plan: FeaturePlan, model_plan: ModelPlan, iteration: int) -> list[CandidateSpec]:
+        started = time.perf_counter()
+        if ctx.allow_freeform_code:
+            return [self.run(ctx, feature_plan, model_plan, iteration)]
+        specs: list[CandidateSpec] = []
+        for candidate_id, variant_feature_plan, variant_model_plan in self._compiled_variants(ctx, feature_plan, model_plan, iteration):
+            specs.append(self._compile_spec(ctx, variant_feature_plan, variant_model_plan, iteration, candidate_id, "code_generator", started))
+        return specs
+
+    def repair(
+        self,
+        ctx: RoleContext,
+        feature_plan: FeaturePlan,
+        model_plan: ModelPlan,
+        previous_candidate: CandidateSpec,
+        error_message: str,
+        traceback_text: str | None,
+        iteration: int,
+    ) -> CandidateSpec:
+        started = time.perf_counter()
+        candidate_id = f"role_graph_iter_{iteration:03d}_repair_1"
+        if not ctx.allow_freeform_code:
+            return self._compile_spec(ctx, feature_plan, model_plan, iteration, candidate_id, "code_generator_repair", started)
+        previous_code = Path(previous_candidate.candidate_path).read_text()
+        if ctx.offline:
+            code = offline_repair_candidate_code()
+        else:
+            response_text = _call_llm(
+                self.role_name,
+                code_repair_prompt(
+                    feature_plan.model_dump(mode="json"),
+                    model_plan.model_dump(mode="json"),
+                    previous_code,
+                    error_message,
+                    traceback_text,
+                ),
+                model=ctx.model,
+            )
+            code = _strip_code_fences(response_text)
+        spec = self._write_spec(ctx, feature_plan, model_plan, iteration, candidate_id, "code_generator_repair", code, started)
+        ctx.trace.log_event(
+            event_type="candidate_repair_attempted",
+            iteration=iteration,
+            agent_role=AgentRole.LLM_CANDIDATE,
+            input_artifact_ids=[previous_candidate.artifact_id],
+            output_artifact_ids=[spec.artifact_id],
+            success=True,
+            extra={"error_message": error_message},
         )
         return spec
 
@@ -367,7 +525,7 @@ class CodeReviewer:
             iteration=iteration,
             target_artifact_ids=[candidate.artifact_id],
             verdict=response.verdict or "unknown",
-            issues=response.issues,
+            issues=response.issues + ([f"failure_reason: {response.failure_reason}"] if response.failure_reason else []),
             recommendations=response.recommendations,
         )
         ctx.store.write_artifact(report)
@@ -386,6 +544,7 @@ class Evaluator:
             cycle_summary_path=str(ctx.cycle_summary_path),
             labels_path=str(ctx.labels_path) if ctx.labels_path else None,
             split_assignments_path=str(ctx.split_assignments_path),
+            split_mode=ctx.split_mode,
             max_cycle=ctx.max_cycle,
             allow_protocol_features=ctx.allow_protocol_features,
             iteration=iteration,
@@ -412,7 +571,8 @@ class Evaluator:
             kendall=metrics.get("kendall"),
             pgr=metrics.get("pgr_author_model"),
             failure_reason=response.failure_reason or response.error_message,
-            traceback=None,
+            traceback=response.traceback,
+            prediction_path=response.prediction_path,
             extra_metrics={k: v for k, v in metrics.items() if k not in {"rmse", "mae", "r2", "spearman", "kendall", "pgr_author_model"}},
         )
         ctx.store.write_artifact(report)

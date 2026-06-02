@@ -66,8 +66,12 @@ def artifact_default_relative_path(artifact: ArtifactModel) -> Path:
     if isinstance(artifact, ModelPlan):
         return folder / f"model_plan_{agent_id}.json"
     if isinstance(artifact, CandidateSpec):
+        if "variant_" in candidate_name:
+            suffix = candidate_name
         return folder / f"candidate_spec_{suffix}.json"
     if isinstance(artifact, EvaluationReport):
+        if "variant_" in candidate_name:
+            suffix = candidate_name
         if artifact.locked_batch9_validation_run:
             return folder / f"evaluation_report_batch9_{suffix}.json"
         return folder / f"evaluation_report_{suffix}.json"

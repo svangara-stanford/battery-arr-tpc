@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 import traceback
+import types
 from pathlib import Path
 from typing import Any, Callable, TypeVar
 
 import numpy as np
 import pandas as pd
 
+from battery_aar.agents.candidate_api import load_candidate
 from battery_aar.agents.evaluator import evaluate_candidate_train_test, regression_metrics
 from battery_aar.agents.sandbox import validate_code_safety
 from battery_aar.features.battery_lifetime_features import build_all_battery_features
@@ -232,35 +235,192 @@ def build_battery_features(request: BuildFeaturesRequest) -> BuildFeaturesRespon
     return _handle_tool(request, "build_battery_features", BuildFeaturesResponse, run)
 
 
-def _review_candidate_code(candidate_path: str | Path) -> tuple[str, list[str], list[str]]:
+def _mock_candidate_tables() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, Any]]:
+    train_metadata = pd.DataFrame(
+        {
+            "row_id": [0, 1, 2],
+            "cell_id": ["anon_cell_00000", "anon_cell_00001", "anon_cell_00002"],
+            "C1": [4.0, 4.4, 4.8],
+            "C2": [4.4, 4.8, 5.2],
+            "C3": [4.8, 5.2, 5.2],
+            "C4": [3.5, 3.6, 3.7],
+        }
+    )
+    test_metadata = pd.DataFrame(
+        {
+            "row_id": [3, 4],
+            "cell_id": ["anon_cell_00003", "anon_cell_00004"],
+            "C1": [4.2, 4.6],
+            "C2": [4.6, 5.0],
+            "C3": [5.0, 5.2],
+            "C4": [3.55, 3.65],
+        }
+    )
+    rows: list[dict[str, Any]] = []
+    for row_id in [0, 1, 2, 3, 4]:
+        for cycle in [1, 2, 10, 50, 91, 100]:
+            rows.append(
+                {
+                    "row_id": row_id,
+                    "cell_id": f"anon_cell_{row_id:05d}",
+                    "cycle_index": cycle,
+                    "discharge_capacity": 1.10 - 0.001 * cycle - 0.0005 * row_id,
+                    "charge_capacity": 1.12 - 0.001 * cycle,
+                }
+            )
+    cycle_summary = pd.DataFrame(rows)
+    train_labels = pd.DataFrame(
+        {
+            "row_id": [0, 1, 2],
+            "cell_id": ["anon_cell_00000", "anon_cell_00001", "anon_cell_00002"],
+            "y": [900.0, 850.0, 800.0],
+        }
+    )
+    config = {"max_cycle": 100, "allow_protocol_features": True}
+    return (
+        train_metadata,
+        cycle_summary[cycle_summary["row_id"].isin([0, 1, 2])].copy(),
+        train_labels,
+        test_metadata,
+        cycle_summary[cycle_summary["row_id"].isin([3, 4])].copy(),
+        config,
+    )
+
+
+def _preflight_candidate(candidate_path: str | Path) -> tuple[bool, str | None, str | None]:
+    try:
+        train_metadata, train_cycles, train_labels, test_metadata, test_cycles, config = _mock_candidate_tables()
+        candidate = load_candidate(candidate_path)
+        if isinstance(candidate, types.ModuleType):
+            model = candidate.fit(train_metadata, train_cycles, train_labels, config)
+            pred = candidate.predict(model, test_metadata, test_cycles, config)
+        else:
+            model = candidate.fit(train_metadata, train_cycles, train_labels, config)
+            pred = candidate.predict(test_metadata, test_cycles, config)
+        if not isinstance(pred, pd.DataFrame):
+            pred = pd.DataFrame(pred)
+        if "y_pred" not in pred.columns:
+            if pred.shape[1] == 1:
+                pred.columns = ["y_pred"]
+            else:
+                raise ValueError("preflight predictions must contain y_pred")
+        if "row_id" not in pred.columns and "cell_id" not in pred.columns and len(pred) != len(test_metadata):
+            raise ValueError("preflight predictions must include row_id/cell_id or match test row order")
+        y_pred = pd.to_numeric(pred["y_pred"], errors="coerce").to_numpy(float)
+        if len(y_pred) != len(test_metadata):
+            raise ValueError(f"preflight prediction row count {len(y_pred)} did not match expected {len(test_metadata)}")
+        if not np.isfinite(y_pred).all():
+            raise ValueError("preflight predictions must be finite")
+        return True, None, None
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}", traceback.format_exc()
+
+
+IDENTIFIER_REVIEW_TOKENS = {
+    "batch_id",
+    "source_path",
+    "protocol_readable",
+    "anonymized_cell_id",
+    "cell_id",
+    "row_id",
+    "barcode",
+    "channel",
+    "file_path",
+    "filename",
+    "path",
+}
+
+
+def _identifier_token_is_allowed_context(line: str, token: str) -> bool:
+    lowered = line.lower()
+    if "identifier" in lowered or "leakage" in lowered:
+        return True
+    if "drop" in lowered or "exclude" in lowered or "forbidden" in lowered or "blocked" in lowered:
+        return True
+    if "columns" in lowered and ("{" in line or "[" in line or "(" in line):
+        return True
+    if token in {"row_id", "cell_id"} and (
+        "merge" in lowered
+        or "join" in lowered
+        or "index" in lowered
+        or "output" in lowered
+        or "insert" in lowered
+        or "drop_duplicates" in lowered
+        or "columns" in lowered
+        or "[[" in lowered
+    ):
+        return True
+    return False
+
+
+def _identifier_feature_issues(code: str) -> list[str]:
+    issues: list[str] = []
+    in_identifier_block = False
+    for line_no, line in enumerate(code.splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        lowered = stripped.lower()
+        if in_identifier_block:
+            if "}" in stripped or "]" in stripped or ")" in stripped:
+                in_identifier_block = False
+            continue
+        if ("identifier" in lowered or "exclude" in lowered or "drop" in lowered) and ("{" in stripped or "[" in stripped or "(" in stripped):
+            if not ("}" in stripped or "]" in stripped or ")" in stripped):
+                in_identifier_block = True
+            continue
+        for token in IDENTIFIER_REVIEW_TOKENS:
+            if token not in lowered:
+                continue
+            if _identifier_token_is_allowed_context(stripped, token):
+                continue
+            if (
+                "feature" in lowered
+                or re.search(r"\bX\s*=", stripped)
+                or re.search(r"\bfeatures\s*=", stripped)
+                or ".fit(" in stripped
+            ):
+                issues.append(f"{token} may be used as a model feature on line {line_no}")
+    return issues
+
+
+def _review_candidate_code(candidate_path: str | Path) -> tuple[str, list[str], list[str], str | None]:
     code = Path(candidate_path).read_text()
     issues: list[str] = []
     recommendations: list[str] = []
+    failure_reason: str | None = None
     try:
         validate_code_safety(code)
     except Exception as exc:
         issues.append(str(exc))
     lowered = code.lower()
-    for token in ["row_id", "cell_id"]:
-        if token in lowered and "drop" not in lowered and "feature" in lowered:
-            issues.append(f"{token} appears near feature construction; verify it is used only as a join key")
-    if "batch_id" in lowered:
-        issues.append("batch_id appears in candidate code; batch identifiers should not be model features")
+    issues.extend(_identifier_feature_issues(code))
     if "build_all_battery_features" not in code:
         recommendations.append("Consider using build_all_battery_features for author-inspired feature coverage")
     if "simpleimputer" not in lowered and "fillna" not in lowered:
         recommendations.append("Add explicit missing-value handling")
-    verdict = "pass" if not issues else "needs_attention"
-    return verdict, issues, recommendations
+    preflight_ok, preflight_reason, preflight_traceback = _preflight_candidate(candidate_path)
+    if not preflight_ok:
+        failure_reason = preflight_reason
+        issues.append(f"preflight_failure: {preflight_reason}")
+        if preflight_traceback:
+            recommendations.append("Preflight traceback:\n" + preflight_traceback)
+    if failure_reason:
+        verdict = "needs_repair"
+    elif issues:
+        verdict = "needs_attention"
+    else:
+        verdict = "pass"
+    return verdict, issues, recommendations, failure_reason
 
 
 def review_candidate(request: CandidateReviewRequest) -> CandidateReviewResponse:
     def run(store: ArtifactStore) -> dict[str, Any]:
-        verdict, issues, recommendations = _review_candidate_code(request.candidate_path)
+        verdict, issues, recommendations, failure_reason = _review_candidate_code(request.candidate_path)
         artifact = ReviewReport(
             run_id=request.run_id,
             parent_artifact_ids=request.input_artifact_ids,
-            human_readable_summary=f"Candidate review verdict: {verdict}.",
+            human_readable_summary=f"Candidate review verdict: {verdict}." + (f" Failure: {failure_reason}" if failure_reason else ""),
             reviewer_id=request.agent_role or "tool_reviewer",
             target_artifact_ids=request.input_artifact_ids,
             verdict=verdict,
@@ -274,6 +434,7 @@ def review_candidate(request: CandidateReviewRequest) -> CandidateReviewResponse
             "verdict": verdict,
             "issues": issues,
             "recommendations": recommendations,
+            "failure_reason": failure_reason,
         }
 
     return _handle_tool(request, "review_candidate", CandidateReviewResponse, run)
@@ -310,6 +471,76 @@ def _train_val_ids(metadata: pd.DataFrame, labels: pd.DataFrame, split_assignmen
     return ids[:-n_val], ids[-n_val:]
 
 
+def _prediction_diagnostics(predictions: pd.DataFrame) -> dict[str, Any]:
+    if predictions.empty:
+        return {
+            "n_predictions": 0,
+            "n_negative_predictions": 0,
+            "n_nonfinite_predictions": 0,
+        }
+    y_true = pd.to_numeric(predictions["y_true"], errors="coerce").to_numpy(float)
+    y_pred = pd.to_numeric(predictions["y_pred"], errors="coerce").to_numpy(float)
+    residual = y_pred - y_true
+    finite_pred = np.isfinite(y_pred)
+    finite_true = np.isfinite(y_true)
+    finite_residual = np.isfinite(residual)
+    diagnostics = {
+        "y_true_mean": float(np.mean(y_true[finite_true])) if finite_true.any() else None,
+        "y_pred_mean": float(np.mean(y_pred[finite_pred])) if finite_pred.any() else None,
+        "y_true_min": float(np.min(y_true[finite_true])) if finite_true.any() else None,
+        "y_true_max": float(np.max(y_true[finite_true])) if finite_true.any() else None,
+        "y_pred_min": float(np.min(y_pred[finite_pred])) if finite_pred.any() else None,
+        "y_pred_max": float(np.max(y_pred[finite_pred])) if finite_pred.any() else None,
+        "residual_mean": float(np.mean(residual[finite_residual])) if finite_residual.any() else None,
+        "residual_std": float(np.std(residual[finite_residual], ddof=0)) if finite_residual.any() else None,
+        "n_predictions": int(len(predictions)),
+        "n_negative_predictions": int(np.sum(finite_pred & (y_pred < 0))),
+        "n_nonfinite_predictions": int(np.sum(~finite_pred)),
+    }
+    return diagnostics
+
+
+def _write_evaluation_predictions(
+    *,
+    store: ArtifactStore,
+    request: CandidateEvaluateRequest,
+    candidate_id: str,
+    predictions: pd.DataFrame,
+    metadata: pd.DataFrame,
+    val_ids: list[int],
+) -> tuple[Path, dict[str, Any]]:
+    output = predictions.rename(columns={"y": "y_true"}).copy()
+    if "y_true" not in output.columns:
+        raise ValueError("prediction diagnostics require y_true")
+    output["residual"] = pd.to_numeric(output["y_pred"], errors="coerce") - pd.to_numeric(output["y_true"], errors="coerce")
+    output["split_mode"] = request.split_mode
+    meta_cols = ["row_id"]
+    for col in ["cell_id", "batch_id", "protocol_readable", "C1", "C2", "C3", "C4"]:
+        if col in metadata.columns:
+            meta_cols.append(col)
+    meta = metadata.loc[metadata["row_id"].isin(val_ids), meta_cols].drop_duplicates("row_id").copy()
+    output = output.merge(meta, on="row_id", how="left")
+    ordered_cols = [
+        "row_id",
+        "cell_id",
+        "y_true",
+        "y_pred",
+        "residual",
+        "split_mode",
+        "batch_id",
+        "protocol_readable",
+        "C1",
+        "C2",
+        "C3",
+        "C4",
+    ]
+    output = output[[col for col in ordered_cols if col in output.columns]]
+    prediction_path = store.artifact_dir / f"iteration_{int(request.iteration or 0):03d}" / f"predictions_{candidate_id}.csv"
+    prediction_path.parent.mkdir(parents=True, exist_ok=True)
+    output.to_csv(prediction_path, index=False)
+    return prediction_path, _prediction_diagnostics(output)
+
+
 def evaluate_candidate(request: CandidateEvaluateRequest) -> CandidateEvaluateResponse:
     def run(store: ArtifactStore) -> dict[str, Any]:
         metadata = pd.read_csv(request.metadata_path)
@@ -335,17 +566,31 @@ def evaluate_candidate(request: CandidateEvaluateRequest) -> CandidateEvaluateRe
             allow_protocol_features=request.allow_protocol_features,
             max_cycle=request.max_cycle,
             timeout_s=request.timeout_s,
+            return_predictions=True,
         )
         metrics = result.get("metrics") or {}
+        candidate_id = Path(request.candidate_path).stem
+        prediction_path: Path | None = None
+        prediction_diagnostics: dict[str, Any] = {}
+        if bool(result.get("success")) and isinstance(result.get("predictions"), pd.DataFrame):
+            prediction_path, prediction_diagnostics = _write_evaluation_predictions(
+                store=store,
+                request=request,
+                candidate_id=candidate_id,
+                predictions=result["predictions"],
+                metadata=metadata,
+                val_ids=val_ids,
+            )
+            metrics = {**metrics, **prediction_diagnostics}
         artifact = EvaluationReport(
             run_id=request.run_id,
             parent_artifact_ids=request.input_artifact_ids,
             human_readable_summary=f"Candidate evaluation success={bool(result.get('success'))}.",
-            candidate_id=Path(request.candidate_path).stem,
+            candidate_id=candidate_id,
             candidate_path=request.candidate_path,
             agent_id=request.agent_role,
             iteration=request.iteration,
-            split_mode="tool_validation",
+            split_mode=request.split_mode,
             success=bool(result.get("success")),
             rmse=metrics.get("rmse"),
             mae=metrics.get("mae"),
@@ -357,18 +602,24 @@ def evaluate_candidate(request: CandidateEvaluateRequest) -> CandidateEvaluateRe
             traceback=result.get("traceback"),
             stdout_excerpt=(result.get("stdout") or "")[:2000],
             stderr_excerpt=(result.get("stderr") or "")[:2000],
+            prediction_path=str(prediction_path) if prediction_path else None,
             extra_metrics={k: v for k, v in metrics.items() if k not in {"rmse", "mae", "r2", "spearman", "kendall", "pgr_author_model"}},
         )
         path = store.write_artifact(artifact, "tool_outputs/evaluation_report.json")
+        output_paths = {"evaluation_report": str(path)}
+        if prediction_path:
+            output_paths["predictions"] = str(prediction_path)
         return {
             "_success": bool(result.get("success")),
             "_error_type": result.get("error_type"),
             "_error_message": result.get("failure_reason") or result.get("error"),
             "output_artifact_ids": [artifact.artifact_id],
-            "output_paths": {"evaluation_report": str(path)},
+            "output_paths": output_paths,
             "metrics": _json_ready(metrics),
             "n_eval": result.get("n_eval"),
+            "prediction_path": str(prediction_path) if prediction_path else None,
             "failure_reason": result.get("failure_reason") or result.get("error"),
+            "traceback": result.get("traceback"),
         }
 
     return _handle_tool(request, "evaluate_candidate", CandidateEvaluateResponse, run)
