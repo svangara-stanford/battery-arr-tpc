@@ -1,0 +1,66 @@
+{
+  "artifact_id": "artifact_13620eec04984ff88b6ee8e14135c381",
+  "artifact_type": "FeatureProgram",
+  "created_at": "2026-06-02T04:36:19.476936Z",
+  "cycle_index_convention": "raw_zero_based",
+  "description": "Small deterministic feature program for tests and smoke runs.",
+  "feature_selection_policy": null,
+  "first_n_cycles": 100,
+  "human_readable_summary": "Small deterministic feature program for tests and smoke runs.",
+  "include_protocol_features": false,
+  "name": "Minimal Debug",
+  "operators": [
+    {
+      "description": null,
+      "enabled": true,
+      "family": "capacity_summary",
+      "feature_prefix": null,
+      "hypothesis": null,
+      "operator_name": "cycle_scalar",
+      "operator_type": "cycle_scalar",
+      "params": {
+        "aggregations": [
+          "last"
+        ],
+        "cycle_indices": [
+          0,
+          1,
+          9
+        ],
+        "signals": [
+          "discharge_capacity"
+        ]
+      }
+    },
+    {
+      "description": null,
+      "enabled": true,
+      "family": "scalar_delta",
+      "feature_prefix": null,
+      "hypothesis": null,
+      "operator_name": "cross_cycle_scalar_delta",
+      "operator_type": "cross_cycle_scalar_delta",
+      "params": {
+        "cycle_pairs": [
+          [
+            0,
+            9
+          ]
+        ],
+        "operations": [
+          "difference",
+          "log_abs_difference"
+        ],
+        "signals": [
+          "discharge_capacity"
+        ]
+      }
+    }
+  ],
+  "parent_artifact_ids": [],
+  "program_id": "minimal_debug",
+  "proposed_by": "deterministic_program_library",
+  "rationale": "Trusted deterministic feature-program recipe.",
+  "run_id": "feature_program_library",
+  "schema_version": "open_battery_agents_artifacts.v1"
+}

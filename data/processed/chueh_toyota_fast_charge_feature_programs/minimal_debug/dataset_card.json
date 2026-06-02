@@ -1,0 +1,19 @@
+{
+  "cells_featurized": 179,
+  "cells_requested": 179,
+  "cycle_index_convention": "raw_zero_based",
+  "description": "Small deterministic feature program for tests and smoke runs.",
+  "exclusions_count": 0,
+  "feature_family_counts": {
+    "capacity_summary": 3,
+    "capacity_summary_delta": 2
+  },
+  "n_excluded_cells": 0,
+  "name": "Minimal Debug",
+  "program_id": "minimal_debug",
+  "protocol_features_used": false,
+  "proxy_features_used": false,
+  "raw_source_root": "/Users/sreyavangara/Documents/Research/Code/battery-arr/literature_models_and_data/battery-fast-charging",
+  "true_curve_features_used": false,
+  "warnings_count": 100
+}

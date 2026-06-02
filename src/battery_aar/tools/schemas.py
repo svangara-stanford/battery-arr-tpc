@@ -51,12 +51,31 @@ class BuildFeaturesRequest(ToolRequestBase):
     max_cycle: int = 100
     include_protocol: bool = True
     return_feature_metadata: bool = True
+    feature_program_paths: list[str] = Field(default_factory=list)
+    feature_program_mode: str = "none"
+    include_feature_programs: bool = False
+    feature_family_filter: list[str] = Field(default_factory=list)
+    feature_program_recipe: str | None = None
+    feature_program_json: str | None = None
 
 
 class BuildFeaturesResponse(ToolResponseBase):
     n_rows: int = 0
     n_features: int = 0
     feature_columns: list[str] = Field(default_factory=list)
+    feature_programs_used: list[str] = Field(default_factory=list)
+    n_feature_program_columns: int = 0
+    feature_family_counts: dict[str, int] = Field(default_factory=dict)
+    n_matched_rows: int = 0
+    n_missing_rows: int = 0
+    true_raw_curve_features_used: bool = False
+    proxy_features_used: bool = False
+    protocol_features_used: bool = False
+
+
+class FeatureProgramsResponse(ToolResponseBase):
+    recipes: list[str] = Field(default_factory=list)
+    operators: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class CandidateReviewRequest(ToolRequestBase):
@@ -82,6 +101,10 @@ class CandidateEvaluateRequest(ToolRequestBase):
     weak_rmse: float | None = None
     strong_rmse: float | None = None
     timeout_s: int = 30
+    feature_program_paths: list[str] = Field(default_factory=list)
+    feature_program_mode: str = "none"
+    include_feature_programs: bool = False
+    feature_family_filter: list[str] = Field(default_factory=list)
 
 
 class CandidateEvaluateResponse(ToolResponseBase):

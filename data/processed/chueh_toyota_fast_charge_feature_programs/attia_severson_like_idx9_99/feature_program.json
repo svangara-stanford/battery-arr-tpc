@@ -1,0 +1,106 @@
+{
+  "artifact_id": "artifact_3a4d06aa1996450d861f3586e31c390c",
+  "artifact_type": "FeatureProgram",
+  "created_at": "2026-06-02T04:54:24.348543Z",
+  "cycle_index_convention": "raw_zero_based",
+  "description": "Literature-inspired capacity and discharge curve-delta terms using generic trusted operators.",
+  "feature_selection_policy": null,
+  "first_n_cycles": 100,
+  "human_readable_summary": "Literature-inspired capacity and discharge curve-delta terms using generic trusted operators.",
+  "include_protocol_features": false,
+  "name": "Attia/Severson-like",
+  "operators": [
+    {
+      "description": null,
+      "enabled": true,
+      "family": "capacity_summary",
+      "feature_prefix": null,
+      "hypothesis": null,
+      "operator_name": "cycle_scalar",
+      "operator_type": "cycle_scalar",
+      "params": {
+        "aggregations": [
+          "last"
+        ],
+        "cycle_indices": [
+          1,
+          9,
+          99
+        ],
+        "signals": [
+          "discharge_capacity"
+        ]
+      }
+    },
+    {
+      "description": null,
+      "enabled": true,
+      "family": "capacity_summary",
+      "feature_prefix": null,
+      "hypothesis": null,
+      "operator_name": "cycle_window_stats",
+      "operator_type": "cycle_window_stats",
+      "params": {
+        "signals": [
+          "discharge_capacity"
+        ],
+        "stats": [
+          "max",
+          "delta",
+          "slope",
+          "intercept"
+        ],
+        "windows": [
+          [
+            0,
+            99
+          ],
+          [
+            91,
+            99
+          ]
+        ]
+      }
+    },
+    {
+      "description": null,
+      "enabled": true,
+      "family": "true_curve_difference",
+      "feature_prefix": null,
+      "hypothesis": null,
+      "operator_name": "cross_cycle_curve_delta",
+      "operator_type": "cross_cycle_curve_delta",
+      "params": {
+        "aggregations": [
+          "min",
+          "mean",
+          "var",
+          "skew",
+          "sum_abs",
+          "sum_sq"
+        ],
+        "cycle_pairs": [
+          [
+            9,
+            99
+          ]
+        ],
+        "delta_direction": "later_minus_earlier",
+        "grid_size": 1000,
+        "step_type": "discharge",
+        "transforms": [
+          "identity",
+          "log_abs"
+        ],
+        "x_axis": "voltage",
+        "y_signal": "discharge_capacity"
+      }
+    }
+  ],
+  "parent_artifact_ids": [],
+  "program_id": "attia_severson_like_idx9_99",
+  "proposed_by": "deterministic_program_library",
+  "rationale": "Trusted deterministic feature-program recipe.",
+  "run_id": "feature_program_library",
+  "schema_version": "open_battery_agents_artifacts.v1"
+}

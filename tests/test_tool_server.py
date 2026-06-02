@@ -39,7 +39,7 @@ def _write_toy_processed(base: Path):
     return metadata, pd.DataFrame(cycles)
 
 
-def test_fastapi_health_and_tools():
+def test_fastapi_health_and_tools(tmp_path):
     client = TestClient(create_app())
 
     health = client.get("/health")
@@ -53,10 +53,26 @@ def test_fastapi_health_and_tools():
     assert {tool["name"] for tool in payload["tools"]} == {
         "profile_dataset",
         "build_battery_features",
+        "list_feature_programs",
         "review_candidate",
         "evaluate_candidate",
         "compare_runs",
     }
+    programs = client.get("/features/programs", params={"run_id": "programs_http", "run_dir": str(tmp_path / "programs_http")})
+    assert programs.status_code == 200
+    assert "attia_severson_like" in programs.json()["recipes"]
+    assert "cross_cycle_curve_delta" in {operator["name"] for operator in programs.json()["operators"]}
+
+
+def test_native_tool_client_lists_feature_programs_and_logs_trace(tmp_path):
+    run_dir = tmp_path / "feature_program_tools"
+    response = NativeToolClient().list_feature_programs(run_id="feature_program_tools", run_dir=str(run_dir))
+
+    assert response.success is True
+    assert "broad_physics" in response.recipes
+    records = [json.loads(line) for line in (run_dir / "artifacts" / "tool_calls.jsonl").read_text().splitlines() if line.strip()]
+    assert records[-1]["tool_name"] == "list_feature_programs"
+    assert records[-1]["success"] is True
 
 
 def test_native_tool_client_profile_dataset_writes_trace(tmp_path):

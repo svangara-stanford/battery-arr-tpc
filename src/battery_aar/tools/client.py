@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from urllib.parse import urlencode
 from urllib import request as urlrequest
 
-from .implementations import build_battery_features, compare_runs, evaluate_candidate, profile_dataset, review_candidate
+from .implementations import build_battery_features, compare_runs, evaluate_candidate, list_feature_programs, profile_dataset, review_candidate
 from .schemas import (
     BuildFeaturesRequest,
     BuildFeaturesResponse,
@@ -14,6 +15,7 @@ from .schemas import (
     CandidateReviewResponse,
     DatasetProfileRequest,
     DatasetProfileResponse,
+    FeatureProgramsResponse,
     RunCompareRequest,
     RunCompareResponse,
 )
@@ -30,6 +32,9 @@ class NativeToolClient:
 
     def review_candidate(self, **kwargs: Any) -> CandidateReviewResponse:
         return review_candidate(CandidateReviewRequest(**kwargs))
+
+    def list_feature_programs(self, **kwargs: Any) -> FeatureProgramsResponse:
+        return list_feature_programs(**kwargs)
 
     def evaluate_candidate(self, **kwargs: Any) -> CandidateEvaluateResponse:
         return evaluate_candidate(CandidateEvaluateRequest(**kwargs))
@@ -64,6 +69,15 @@ class HTTPToolClient:
 
     def review_candidate(self, **kwargs: Any) -> CandidateReviewResponse:
         return self._post("/candidate/review", CandidateReviewRequest(**kwargs), CandidateReviewResponse)
+
+    def list_feature_programs(self, **kwargs: Any) -> FeatureProgramsResponse:
+        run_id = kwargs.get("run_id", "http_client")
+        tool_call_id = kwargs.get("tool_call_id", "feature_programs")
+        query = urlencode({key: value for key, value in {"run_id": run_id, "tool_call_id": tool_call_id, "run_dir": kwargs.get("run_dir")}.items() if value is not None})
+        req = urlrequest.Request(self.base_url + f"/features/programs?{query}", method="GET")
+        with urlrequest.urlopen(req) as response:  # nosec B310 - caller controls configured tool server URL
+            data = json.loads(response.read().decode("utf-8"))
+        return FeatureProgramsResponse.model_validate(data)
 
     def evaluate_candidate(self, **kwargs: Any) -> CandidateEvaluateResponse:
         return self._post("/candidate/evaluate", CandidateEvaluateRequest(**kwargs), CandidateEvaluateResponse)

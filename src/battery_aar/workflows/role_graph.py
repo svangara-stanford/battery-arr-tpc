@@ -51,6 +51,14 @@ class RoleGraphConfig:
     battery_fast_charging_root: Path | None = None
     batch9_path: Path | None = None
     final_batch9_top_k: int = 0
+    feature_program_paths: list[Path] | None = None
+    batch9_feature_program_path: Path | None = None
+    include_feature_programs: bool = False
+    feature_program_mode: str = "none"
+    feature_program_recipe: str | None = None
+    feature_family_filter: list[str] | None = None
+    cycle_early_index: int = 9
+    cycle_late_index: int = 99
 
 
 def _load_processed(processed_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Path | None]:
@@ -93,6 +101,114 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n")
 
 
+def _resolve_feature_table_path(path: Path) -> Path:
+    return path / "feature_table.csv" if path.is_dir() else path
+
+
+def _resolve_feature_metadata_path(table_path: Path) -> Path:
+    if table_path.name == "feature_table.csv":
+        return table_path.with_name("feature_metadata.csv")
+    candidate = table_path.with_name(table_path.stem + "_metadata.csv")
+    return candidate if candidate.exists() else table_path.with_name("feature_metadata.csv")
+
+
+def _load_feature_metadata_for_report(feature_program_paths: list[Path] | None) -> dict[str, Any]:
+    paths = [Path(path) for path in (feature_program_paths or [])]
+    if not paths:
+        return {
+            "feature_programs_used": [],
+            "feature_family_counts": {},
+            "true_raw_curve_features_used": False,
+            "proxy_features_used": False,
+            "protocol_features_used": False,
+            "n_feature_program_columns": 0,
+        }
+    metadata_parts: list[pd.DataFrame] = []
+    feature_columns: set[str] = set()
+    for raw_path in paths:
+        table_path = _resolve_feature_table_path(raw_path)
+        if table_path.exists():
+            try:
+                table = pd.read_csv(table_path, nrows=1)
+                feature_columns.update(col for col in table.columns if col not in {"row_id", "cell_id"})
+            except Exception:
+                pass
+        meta_path = _resolve_feature_metadata_path(table_path)
+        if meta_path.exists():
+            try:
+                metadata_parts.append(pd.read_csv(meta_path))
+            except Exception:
+                pass
+    if not metadata_parts:
+        return {
+            "feature_programs_used": [str(path) for path in paths],
+            "feature_family_counts": {},
+            "true_raw_curve_features_used": False,
+            "proxy_features_used": False,
+            "protocol_features_used": False,
+            "n_feature_program_columns": len(feature_columns),
+        }
+    metadata = pd.concat(metadata_parts, ignore_index=True)
+    if "feature_family" not in metadata.columns and "family" in metadata.columns:
+        metadata["feature_family"] = metadata["family"]
+    family_counts = (
+        {str(k): int(v) for k, v in metadata["feature_family"].astype(str).value_counts().to_dict().items()}
+        if "feature_family" in metadata.columns
+        else {}
+    )
+    return {
+        "feature_programs_used": [str(path) for path in paths],
+        "feature_family_counts": family_counts,
+        "true_raw_curve_features_used": bool(metadata.get("is_true_curve_feature", pd.Series(dtype=bool)).fillna(False).astype(bool).any()),
+        "proxy_features_used": bool(metadata.get("is_proxy_feature", pd.Series(dtype=bool)).fillna(False).astype(bool).any()),
+        "protocol_features_used": bool(metadata.get("uses_protocol", pd.Series(dtype=bool)).fillna(False).astype(bool).any()),
+        "n_feature_program_columns": int(len(set(metadata.get("feature_name", pd.Series(dtype=str)).dropna().astype(str))) or len(feature_columns)),
+    }
+
+
+def _combine_locked_feature_program_tables(
+    *,
+    search_paths: list[Path],
+    batch9_path: Path | None,
+    out_dir: Path,
+    row_offset: int,
+) -> list[str]:
+    if not search_paths:
+        return []
+    if batch9_path is None:
+        return [str(_resolve_feature_table_path(path)) for path in search_paths]
+    batch9_table_path = _resolve_feature_table_path(batch9_path)
+    if not batch9_table_path.exists():
+        raise FileNotFoundError(f"Batch 9 feature-program table not found: {batch9_table_path}")
+    batch9_table = pd.read_csv(batch9_table_path)
+    if "row_id" in batch9_table.columns:
+        batch9_table = batch9_table.copy()
+        batch9_table["row_id"] = pd.to_numeric(batch9_table["row_id"], errors="raise").astype(int) + int(row_offset)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    combined_paths: list[str] = []
+    for idx, search_path in enumerate(search_paths):
+        search_table_path = _resolve_feature_table_path(search_path)
+        if not search_table_path.exists():
+            raise FileNotFoundError(f"search feature-program table not found: {search_table_path}")
+        search_table = pd.read_csv(search_table_path)
+        combined = pd.concat([search_table, batch9_table], ignore_index=True, sort=False)
+        combined_path = out_dir / f"combined_feature_table_{idx:02d}.csv"
+        combined.to_csv(combined_path, index=False)
+
+        meta_parts: list[pd.DataFrame] = []
+        for table_path in [search_table_path, batch9_table_path]:
+            meta_path = _resolve_feature_metadata_path(table_path)
+            if meta_path.exists():
+                meta_parts.append(pd.read_csv(meta_path))
+        if meta_parts:
+            pd.concat(meta_parts, ignore_index=True).drop_duplicates("feature_name").to_csv(
+                combined_path.with_name("feature_metadata.csv") if idx == 0 else combined_path.with_name(f"combined_feature_table_{idx:02d}_metadata.csv"),
+                index=False,
+            )
+        combined_paths.append(str(combined_path))
+    return combined_paths
+
+
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
@@ -129,6 +245,8 @@ def _candidate_metric_row(record: dict[str, Any]) -> dict[str, Any]:
         "target_transform": candidate.target_transform,
         "include_protocol_features": candidate.include_protocol_features,
         "compiled_candidate": candidate.compiled_candidate,
+        "feature_set": candidate.feature_set,
+        "feature_program_count": len(candidate.feature_program_paths or []),
         "rmse": evaluation.rmse,
         "mae": evaluation.mae,
         "r2": evaluation.r2,
@@ -151,6 +269,17 @@ def _best_successful_record(records: list[dict[str, Any]]) -> dict[str, Any] | N
     if not successful:
         return None
     return min(successful, key=lambda record: float(record["evaluation"].rmse))
+
+
+def _best_metric_rows_by(rows: list[dict[str, Any]], group_key: str) -> list[dict[str, Any]]:
+    best: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if not row.get("success") or row.get("rmse") is None:
+            continue
+        key = str(row.get(group_key) or "unknown")
+        if key not in best or float(row["rmse"]) < float(best[key]["rmse"]):
+            best[key] = row
+    return [best[key] for key in sorted(best)]
 
 
 def _prediction_diagnostics(predictions: pd.DataFrame) -> dict[str, Any]:
@@ -197,6 +326,9 @@ def _write_report(report_path: Path, report: dict[str, Any]) -> None:
     locked = report.get("locked_batch9_validation") or {"status": "not_run"}
     locked_metrics = report.get("final_batch9_metrics") or {}
     topk_rows = report.get("final_batch9_topk_rows") or []
+    feature_program_report = report.get("feature_program_report") or {}
+    best_by_feature_set = report.get("best_by_feature_set") or []
+    best_by_target_transform = report.get("best_by_target_transform") or []
     lines = [
         "# Open Battery Agents Role Workflow",
         "",
@@ -218,6 +350,18 @@ def _write_report(report_path: Path, report: dict[str, Any]) -> None:
         f"- split seed: {report.get('split_seed')}",
         "",
         "Batch 9 was not used during surrogate search.",
+        "",
+        "## Feature Programs",
+        "",
+        f"- include feature programs: `{report.get('include_feature_programs')}`",
+        f"- feature program mode: `{report.get('feature_program_mode')}`",
+        f"- recipe hint: `{report.get('feature_program_recipe')}`",
+        f"- feature programs used: {len(feature_program_report.get('feature_programs_used', []))}",
+        f"- feature-program columns: {feature_program_report.get('n_feature_program_columns')}",
+        f"- feature-family counts: `{feature_program_report.get('feature_family_counts', {})}`",
+        f"- true raw curve features used: `{feature_program_report.get('true_raw_curve_features_used')}`",
+        f"- proxy features used: `{feature_program_report.get('proxy_features_used')}`",
+        f"- protocol features used: `{feature_program_report.get('protocol_features_used')}`",
         "",
         "## Tool Calls",
         "",
@@ -247,19 +391,51 @@ def _write_report(report_path: Path, report: dict[str, Any]) -> None:
             "",
             "## Per-Iteration Candidates",
             "",
-            "| iteration | candidate_id | model_family | target_transform | include_protocol_features | success | RMSE | MAE | R2 | y_pred_mean | y_true_mean | prediction_path |",
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| iteration | candidate_id | model_family | feature_set | target_transform | include_protocol_features | success | RMSE | MAE | R2 | y_pred_mean | y_true_mean | prediction_path |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
     if per_iteration_rows:
         for row in per_iteration_rows:
             lines.append(
-                "| {iteration} | {candidate_id} | {model_family} | {target_transform} | {include_protocol_features} | {success} | {rmse} | {mae} | {r2} | {y_pred_mean} | {y_true_mean} | `{prediction_path}` |".format(
+                "| {iteration} | {candidate_id} | {model_family} | {feature_set} | {target_transform} | {include_protocol_features} | {success} | {rmse} | {mae} | {r2} | {y_pred_mean} | {y_true_mean} | `{prediction_path}` |".format(
                     **row
                 )
             )
     else:
         lines.append("| | | | | | | | | | | | |")
+    lines.extend(
+        [
+            "",
+            "### Best By Feature Set",
+            "",
+            "| feature_set | candidate_id | model_family | target_transform | RMSE | MAE | R2 |",
+            "| --- | --- | --- | --- | --- | --- | --- |",
+        ]
+    )
+    if best_by_feature_set:
+        for row in best_by_feature_set:
+            lines.append(
+                "| {feature_set} | {candidate_id} | {model_family} | {target_transform} | {rmse} | {mae} | {r2} |".format(**row)
+            )
+    else:
+        lines.append("| | | | | | | |")
+    lines.extend(
+        [
+            "",
+            "### Best By Target Transform",
+            "",
+            "| target_transform | candidate_id | feature_set | model_family | RMSE | MAE | R2 |",
+            "| --- | --- | --- | --- | --- | --- | --- |",
+        ]
+    )
+    if best_by_target_transform:
+        for row in best_by_target_transform:
+            lines.append(
+                "| {target_transform} | {candidate_id} | {feature_set} | {model_family} | {rmse} | {mae} | {r2} |".format(**row)
+            )
+    else:
+        lines.append("| | | | | | | |")
     lines.extend(
         [
             "",
@@ -374,6 +550,14 @@ class RoleGraphRunner:
                 "battery_fast_charging_root": str(cfg.battery_fast_charging_root) if cfg.battery_fast_charging_root else None,
                 "batch9_path": str(cfg.batch9_path) if cfg.batch9_path else None,
                 "final_batch9_top_k": cfg.final_batch9_top_k,
+                "feature_program_paths": [str(path) for path in (cfg.feature_program_paths or [])],
+                "batch9_feature_program_path": str(cfg.batch9_feature_program_path) if cfg.batch9_feature_program_path else None,
+                "include_feature_programs": cfg.include_feature_programs,
+                "feature_program_mode": cfg.feature_program_mode,
+                "feature_program_recipe": cfg.feature_program_recipe,
+                "feature_family_filter": list(cfg.feature_family_filter or []),
+                "cycle_early_index": cfg.cycle_early_index,
+                "cycle_late_index": cfg.cycle_late_index,
             },
             tags=["role_graph", "open_battery_agents_v2"],
         )
@@ -414,6 +598,11 @@ class RoleGraphRunner:
             tool_client=self.tool_client,
             allow_freeform_code=cfg.allow_freeform_code,
             candidates_per_iteration=cfg.candidates_per_iteration,
+            feature_program_paths=[str(path) for path in (cfg.feature_program_paths or [])],
+            feature_program_mode=cfg.feature_program_mode,
+            include_feature_programs=cfg.include_feature_programs,
+            feature_family_filter=list(cfg.feature_family_filter or []),
+            feature_program_recipe=cfg.feature_program_recipe,
         )
 
         profile, profile_artifact_ids = DatasetProfiler().run(ctx, parent_ids=[manifest.artifact_id])
@@ -490,6 +679,8 @@ class RoleGraphRunner:
         successful = [record for record in candidate_records if record["evaluation"].success and record["evaluation"].rmse is not None]
         all_candidate_metrics = [_candidate_metric_row(record) for record in candidate_records]
         per_iteration_metrics = [_candidate_metric_row(record) for record in per_iteration_records]
+        best_by_feature_set = _best_metric_rows_by(all_candidate_metrics, "feature_set")
+        best_by_target_transform = _best_metric_rows_by(all_candidate_metrics, "target_transform")
         author_validation = load_author_validation_metrics(cfg.reference_run)
         locked_batch9 = {"status": "not_run"}
         final_batch9_metrics: dict[str, Any] | None = None
@@ -519,6 +710,14 @@ class RoleGraphRunner:
                 holdout_labels["row_id"] = pd.to_numeric(holdout_labels["row_id"], errors="raise").astype(int) + row_offset
                 batch9_weak_rmse = weak_baseline_rmse_against(labels, holdout_labels)
                 author_rmse = author_validation.get("author_model_batch9_rmse")
+                locked_feature_program_paths = [str(path) for path in (cfg.feature_program_paths or [])]
+                if cfg.include_feature_programs and cfg.feature_program_paths:
+                    locked_feature_program_paths = _combine_locked_feature_program_tables(
+                        search_paths=list(cfg.feature_program_paths),
+                        batch9_path=cfg.batch9_feature_program_path,
+                        out_dir=cfg.out / "locked_batch9_feature_programs",
+                        row_offset=row_offset,
+                    )
 
                 def evaluate_locked_candidate(record: dict[str, Any]) -> tuple[dict[str, Any], pd.DataFrame]:
                     candidate = record["candidate"]
@@ -535,6 +734,10 @@ class RoleGraphRunner:
                         allow_protocol_features=cfg.allow_protocol_features,
                         max_cycle=cfg.max_cycle,
                         return_predictions=True,
+                        feature_program_paths=locked_feature_program_paths,
+                        feature_program_mode=cfg.feature_program_mode,
+                        include_feature_programs=cfg.include_feature_programs,
+                        feature_family_filter=cfg.feature_family_filter or [],
                     )
                     if not result.get("success"):
                         raise RuntimeError(result.get("failure_reason") or result.get("error") or "Batch 9 candidate evaluation failed")
@@ -639,6 +842,7 @@ class RoleGraphRunner:
         )
 
         tool_calls = _read_jsonl(self.store.artifact_dir / "tool_calls.jsonl")
+        feature_program_report = _load_feature_metadata_for_report(cfg.feature_program_paths)
         report = {
             "run_id": self.run_id,
             "out": str(cfg.out),
@@ -651,6 +855,14 @@ class RoleGraphRunner:
             "role_sequence": ROLE_SEQUENCE,
             "allow_freeform_code": cfg.allow_freeform_code,
             "candidates_per_iteration": cfg.candidates_per_iteration,
+            "include_feature_programs": cfg.include_feature_programs,
+            "feature_program_mode": cfg.feature_program_mode,
+            "feature_program_recipe": cfg.feature_program_recipe,
+            "feature_program_paths": [str(path) for path in (cfg.feature_program_paths or [])],
+            "feature_family_filter": list(cfg.feature_family_filter or []),
+            "cycle_early_index": cfg.cycle_early_index,
+            "cycle_late_index": cfg.cycle_late_index,
+            "feature_program_report": feature_program_report,
             "n_train_cells": len(train_ids),
             "n_validation_cells": len(val_ids),
             "tool_calls": tool_calls,
@@ -662,6 +874,8 @@ class RoleGraphRunner:
             "final_iteration_metrics": final_eval.model_dump(mode="json") if final_eval else {},
             "all_candidate_metrics": all_candidate_metrics,
             "per_iteration_metrics": per_iteration_metrics,
+            "best_by_feature_set": best_by_feature_set,
+            "best_by_target_transform": best_by_target_transform,
             "review_verdict": best_review.verdict if best_review else None,
             "best_review_status": _final_review_status(best_review.verdict if best_review else None, best_review.issues if best_review else [], best_eval.success if best_eval else False),
             "final_review_status": _final_review_status(final_review.verdict if final_review else None, final_review.issues if final_review else [], final_eval.success if final_eval else False),
@@ -709,6 +923,14 @@ def run_role_workflow(
     battery_fast_charging_root: str | Path | None = None,
     batch9_path: str | Path | None = None,
     final_batch9_top_k: int = 0,
+    feature_program_paths: list[str | Path] | None = None,
+    batch9_feature_program_path: str | Path | None = None,
+    include_feature_programs: bool = False,
+    feature_program_mode: str = "none",
+    feature_program_recipe: str | None = None,
+    feature_family_filter: list[str] | None = None,
+    cycle_early_index: int = 9,
+    cycle_late_index: int = 99,
 ) -> dict[str, Any]:
     config = RoleGraphConfig(
         processed_dir=Path(processed_dir),
@@ -732,5 +954,13 @@ def run_role_workflow(
         battery_fast_charging_root=Path(battery_fast_charging_root) if battery_fast_charging_root else None,
         batch9_path=Path(batch9_path) if batch9_path else None,
         final_batch9_top_k=final_batch9_top_k,
+        feature_program_paths=[Path(path) for path in (feature_program_paths or [])],
+        batch9_feature_program_path=Path(batch9_feature_program_path) if batch9_feature_program_path else None,
+        include_feature_programs=include_feature_programs,
+        feature_program_mode=feature_program_mode,
+        feature_program_recipe=feature_program_recipe,
+        feature_family_filter=list(feature_family_filter or []),
+        cycle_early_index=cycle_early_index,
+        cycle_late_index=cycle_late_index,
     )
     return RoleGraphRunner(config).run()

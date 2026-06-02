@@ -33,6 +33,9 @@ def feature_scientist_prompt(dataset_profile: dict[str, Any], feature_probe: dic
 
 Candidate-facing data use row_id and cell_id only as join keys. They must not be model features.
 Allowed feature sources are candidate-facing metadata and first-100-cycle summaries.
+When feature-program tables are available, propose declarative feature-program use rather than raw Pandas code.
+FeatureProgram objects are compiled by trusted repo code and can expose scalar-only, curve-only,
+scalar-plus-curve, broad-physics, and Attia/Severson-like feature sets.
 
 Strong plans should consider author-inspired but coefficient-free feature families:
 - discharge capacity at cycles 2, 10, and 100 when available
@@ -52,7 +55,8 @@ Feature probe:
 {_json_block(feature_probe)}
 
 Return JSON with keys:
-agent_id, feature_families, selected_columns, include_protocol_features, max_cycle, rationale, constraints
+agent_id, feature_families, selected_columns, include_protocol_features, feature_program_ids,
+feature_program_recipe, feature_set, max_cycle, rationale, constraints
 """
 
 
@@ -71,7 +75,7 @@ Dataset profile:
 {_json_block(dataset_profile)}
 
 Return JSON with keys:
-agent_id, model_family, estimator_name, target_transform, hyperparameters, preprocessing_steps, rationale
+agent_id, model_family, estimator_name, target_transform, feature_set, hyperparameters, preprocessing_steps, rationale
 """
 
 
@@ -92,6 +96,10 @@ X = build_all_battery_features(
     max_cycle=100,
     include_protocol=True,
 )
+
+Declarative/compiled candidates are preferred. When FeaturePlan/ModelPlan include feature_program_paths,
+feature_set, or feature_program_recipe, do not write raw feature-plumbing code; rely on the trusted compiler
+unless explicitly asked for free-form code.
 
 Candidate-facing schema:
 - train_metadata/test_metadata include row_id, cell_id, and allowed numeric physical/protocol columns.

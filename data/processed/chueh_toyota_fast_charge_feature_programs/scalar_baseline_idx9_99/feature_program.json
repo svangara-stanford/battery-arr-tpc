@@ -1,0 +1,144 @@
+{
+  "artifact_id": "artifact_84c150cba3a24114af39cf6c91ed2310",
+  "artifact_type": "FeatureProgram",
+  "created_at": "2026-06-02T05:51:45.023441Z",
+  "cycle_index_convention": "raw_zero_based",
+  "description": "Capacity, resistance, temperature, and energy summary features over early-cycle windows.",
+  "feature_selection_policy": null,
+  "first_n_cycles": 100,
+  "human_readable_summary": "Capacity, resistance, temperature, and energy summary features over early-cycle windows.",
+  "include_protocol_features": false,
+  "name": "Scalar Baseline",
+  "operators": [
+    {
+      "description": null,
+      "enabled": true,
+      "family": "capacity_summary",
+      "feature_prefix": null,
+      "hypothesis": null,
+      "operator_name": "cycle_scalar",
+      "operator_type": "cycle_scalar",
+      "params": {
+        "aggregations": [
+          "last",
+          "mean"
+        ],
+        "cycle_indices": [
+          0,
+          1,
+          2,
+          4,
+          9,
+          10,
+          49,
+          99
+        ],
+        "signals": [
+          "discharge_capacity",
+          "charge_capacity",
+          "internal_resistance",
+          "temperature",
+          "discharge_energy",
+          "charge_energy"
+        ]
+      }
+    },
+    {
+      "description": null,
+      "enabled": true,
+      "family": "capacity_summary",
+      "feature_prefix": null,
+      "hypothesis": null,
+      "operator_name": "cycle_window_stats",
+      "operator_type": "cycle_window_stats",
+      "params": {
+        "signals": [
+          "discharge_capacity",
+          "charge_capacity",
+          "internal_resistance",
+          "temperature",
+          "discharge_energy",
+          "charge_energy"
+        ],
+        "stats": [
+          "mean",
+          "std",
+          "min",
+          "max",
+          "delta",
+          "slope",
+          "intercept",
+          "r2",
+          "curvature"
+        ],
+        "windows": [
+          [
+            0,
+            4
+          ],
+          [
+            0,
+            9
+          ],
+          [
+            0,
+            49
+          ],
+          [
+            0,
+            99
+          ],
+          [
+            10,
+            99
+          ]
+        ]
+      }
+    },
+    {
+      "description": null,
+      "enabled": true,
+      "family": "scalar_delta",
+      "feature_prefix": null,
+      "hypothesis": null,
+      "operator_name": "cross_cycle_scalar_delta",
+      "operator_type": "cross_cycle_scalar_delta",
+      "params": {
+        "cycle_pairs": [
+          [
+            0,
+            9
+          ],
+          [
+            1,
+            99
+          ],
+          [
+            9,
+            99
+          ]
+        ],
+        "operations": [
+          "difference",
+          "ratio",
+          "relative_difference",
+          "log_abs_difference"
+        ],
+        "signals": [
+          "discharge_capacity",
+          "charge_capacity",
+          "internal_resistance",
+          "temperature",
+          "discharge_energy",
+          "charge_energy"
+        ]
+      }
+    }
+  ],
+  "parent_artifact_ids": [],
+  "program_id": "scalar_baseline",
+  "proposed_by": "deterministic_program_library",
+  "rationale": "Trusted deterministic feature-program recipe.",
+  "run_id": "feature_program_library",
+  "schema_version": "open_battery_agents_artifacts.v1"
+}

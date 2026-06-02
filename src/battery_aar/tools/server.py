@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from .implementations import build_battery_features, compare_runs, evaluate_candidate, list_tools, profile_dataset, review_candidate
+from .implementations import build_battery_features, compare_runs, evaluate_candidate, list_feature_programs, list_tools, profile_dataset, review_candidate
 from .schemas import (
     BuildFeaturesRequest,
     BuildFeaturesResponse,
@@ -12,6 +12,7 @@ from .schemas import (
     CandidateReviewResponse,
     DatasetProfileRequest,
     DatasetProfileResponse,
+    FeatureProgramsResponse,
     RunCompareRequest,
     RunCompareResponse,
     ToolListResponse,
@@ -36,6 +37,10 @@ def create_app() -> FastAPI:
     @app.post("/features/build", response_model=BuildFeaturesResponse)
     def features_build(request: BuildFeaturesRequest):
         return build_battery_features(request)
+
+    @app.get("/features/programs", response_model=FeatureProgramsResponse)
+    def features_programs(run_id: str = "server", tool_call_id: str = "feature_programs", run_dir: str | None = None):
+        return list_feature_programs(run_id=run_id, tool_call_id=tool_call_id, run_dir=run_dir)
 
     @app.post("/candidate/review", response_model=CandidateReviewResponse)
     def candidate_review(request: CandidateReviewRequest):

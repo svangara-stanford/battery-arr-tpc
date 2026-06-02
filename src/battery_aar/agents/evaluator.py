@@ -142,6 +142,10 @@ def evaluate_candidate_train_test(
     max_cycle: int = 100,
     timeout_s: int = 30,
     return_predictions: bool = False,
+    feature_program_paths: list[str] | None = None,
+    feature_program_mode: str = "none",
+    include_feature_programs: bool = False,
+    feature_family_filter: list[str] | None = None,
 ) -> dict[str, Any]:
     train_cycles = train_cycles[train_cycles["cycle_index"] <= max_cycle].copy()
     test_cycles = test_cycles[test_cycles["cycle_index"] <= max_cycle].copy()
@@ -162,7 +166,14 @@ def evaluate_candidate_train_test(
     safe_train_cycles = sanitize_cycle_summary(train_cycles, cell_id_map)
     safe_test_cycles = sanitize_cycle_summary(test_cycles, cell_id_map)
     safe_train_labels = sanitize_labels(train_labels, cell_id_map)
-    config = {"max_cycle": max_cycle, "allow_protocol_features": allow_protocol_features}
+    config = {
+        "max_cycle": max_cycle,
+        "allow_protocol_features": allow_protocol_features,
+        "feature_program_paths": feature_program_paths or [],
+        "feature_program_mode": feature_program_mode,
+        "include_feature_programs": bool(include_feature_programs),
+        "feature_family_filter": feature_family_filter or [],
+    }
     result = run_candidate(candidate_path, safe_train_meta, safe_train_cycles, safe_train_labels, safe_test_meta, safe_test_cycles, config, timeout_s=timeout_s)
     if not result.success or result.predictions is None:
         return _candidate_failure(

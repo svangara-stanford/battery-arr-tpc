@@ -31,7 +31,17 @@ def main() -> int:
     parser.add_argument("--battery-fast-charging-root", type=Path, default=None)
     parser.add_argument("--batch9-path", type=Path, default=None)
     parser.add_argument("--final-batch9-top-k", type=int, default=0)
+    parser.add_argument("--feature-program-path", dest="feature_program_path", action="append", type=Path, default=[])
+    parser.add_argument("--feature-program-paths", nargs="*", type=Path, default=[])
+    parser.add_argument("--batch9-feature-program-path", type=Path, default=None)
+    parser.add_argument("--include-feature-programs", action="store_true")
+    parser.add_argument("--feature-program-mode", choices=["none", "table", "auto"], default="none")
+    parser.add_argument("--feature-program-recipe", default=None)
+    parser.add_argument("--feature-family-filter", nargs="*", default=[])
+    parser.add_argument("--cycle-early-index", type=int, default=9)
+    parser.add_argument("--cycle-late-index", type=int, default=99)
     args = parser.parse_args()
+    feature_program_paths = list(args.feature_program_path or []) + list(args.feature_program_paths or [])
 
     run_role_workflow(
         processed_dir=args.processed_dir,
@@ -55,6 +65,14 @@ def main() -> int:
         battery_fast_charging_root=args.battery_fast_charging_root,
         batch9_path=args.batch9_path,
         final_batch9_top_k=args.final_batch9_top_k,
+        feature_program_paths=feature_program_paths,
+        batch9_feature_program_path=args.batch9_feature_program_path,
+        include_feature_programs=args.include_feature_programs,
+        feature_program_mode=args.feature_program_mode,
+        feature_program_recipe=args.feature_program_recipe,
+        feature_family_filter=args.feature_family_filter,
+        cycle_early_index=args.cycle_early_index,
+        cycle_late_index=args.cycle_late_index,
     )
     return 0
 

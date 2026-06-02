@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
-from scipy.stats import skew
+
+from battery_aar.features.operators import _safe_skew
 
 KEY_COLUMNS = ("row_id", "cell_id")
 CAPACITY_CYCLES = (1, 2, 10, 50, 95, 98, 100)
@@ -50,6 +52,7 @@ def _feature_metadata(features: pd.DataFrame, family: str, approximate: bool = F
         {
             "feature_name": list(features.columns),
             "family": family,
+            "feature_family": family,
             "approximate": approximate,
         }
     )
@@ -208,7 +211,7 @@ def build_curve_difference_features(cycle_summary: pd.DataFrame, max_cycle: int 
             rows.append(row)
             continue
         variance = float(np.var(diff))
-        skewness = float(skew(diff, bias=False)) if diff.size >= 3 else 0.0
+        skewness = _safe_skew(diff)
         row.update(
             {
                 f"{prefix}qdiff_n_10": float(np.mean(diff)),
@@ -266,6 +269,79 @@ def build_protocol_features(metadata: pd.DataFrame) -> pd.DataFrame:
     return _drop_empty_numeric_columns(features)
 
 
+def _as_path_list(paths: list[str] | tuple[str, ...] | str | None) -> list[Path]:
+    if paths is None:
+        return []
+    if isinstance(paths, (str, Path)):
+        return [Path(paths)]
+    return [Path(path) for path in paths]
+
+
+def _resolve_feature_table_path(path: Path) -> Path:
+    if path.is_dir():
+        return path / "feature_table.csv"
+    return path
+
+
+def _resolve_feature_metadata_path(table_path: Path) -> Path:
+    if table_path.name == "feature_table.csv":
+        return table_path.with_name("feature_metadata.csv")
+    candidate = table_path.with_name(table_path.stem + "_metadata.csv")
+    return candidate if candidate.exists() else table_path.with_name("feature_metadata.csv")
+
+
+def _load_feature_program_features(
+    feature_program_paths: list[str] | tuple[str, ...] | str | None,
+    feature_family_filter: list[str] | tuple[str, ...] | None = None,
+) -> tuple[list[pd.DataFrame], list[pd.DataFrame]]:
+    parts: list[pd.DataFrame] = []
+    metadata_parts: list[pd.DataFrame] = []
+    seen_columns: set[str] = set()
+    allowed_families = {str(item) for item in (feature_family_filter or [])}
+    for raw_path in _as_path_list(feature_program_paths):
+        table_path = _resolve_feature_table_path(raw_path)
+        if not table_path.exists():
+            raise FileNotFoundError(f"feature program table not found: {table_path}")
+        table = pd.read_csv(table_path)
+        key = "row_id" if "row_id" in table.columns else "cell_id" if "cell_id" in table.columns else None
+        if key is None:
+            raise ValueError(f"feature program table requires row_id or cell_id: {table_path}")
+        metadata_path = _resolve_feature_metadata_path(table_path)
+        metadata = pd.read_csv(metadata_path) if metadata_path.exists() else pd.DataFrame(columns=["feature_name", "feature_family", "family"])
+        if "feature_family" not in metadata.columns and "family" in metadata.columns:
+            metadata["feature_family"] = metadata["family"]
+        if "family" not in metadata.columns and "feature_family" in metadata.columns:
+            metadata["family"] = metadata["feature_family"]
+        feature_cols = [col for col in table.columns if col not in KEY_COLUMNS]
+        if allowed_families and not metadata.empty and "feature_name" in metadata and "feature_family" in metadata:
+            allowed_cols = set(metadata.loc[metadata["feature_family"].astype(str).isin(allowed_families), "feature_name"].astype(str))
+            feature_cols = [col for col in feature_cols if col in allowed_cols]
+            metadata = metadata[metadata["feature_name"].astype(str).isin(feature_cols)].copy()
+        feature = table[[key, *feature_cols]].copy()
+        rename: dict[str, str] = {}
+        stem = table_path.parent.name if table_path.name == "feature_table.csv" else table_path.stem
+        for col in feature_cols:
+            if col in seen_columns:
+                rename[col] = f"{stem}_{col}"
+            seen_columns.add(rename.get(col, col))
+        if rename:
+            feature = feature.rename(columns=rename)
+            if not metadata.empty and "feature_name" in metadata:
+                metadata["feature_name"] = metadata["feature_name"].replace(rename)
+        for col in list(feature.columns):
+            if col == key:
+                continue
+            feature[col] = pd.to_numeric(feature[col], errors="coerce")
+        feature = feature.set_index(key)
+        feature.index.name = key
+        parts.append(_drop_empty_numeric_columns(feature))
+        if not metadata.empty:
+            metadata = metadata[metadata["feature_name"].isin(feature.columns)].copy()
+            metadata["source_feature_program_table"] = str(table_path)
+            metadata_parts.append(metadata)
+    return parts, metadata_parts
+
+
 def build_all_battery_features(
     metadata: pd.DataFrame,
     cycle_summary: pd.DataFrame,
@@ -273,6 +349,10 @@ def build_all_battery_features(
     include_protocol: bool | None = None,
     return_feature_metadata: bool = False,
     include_protocol_features: bool | None = None,
+    feature_program_paths: list[str] | tuple[str, ...] | str | None = None,
+    feature_program_mode: str = "none",
+    include_feature_programs: bool = False,
+    feature_family_filter: list[str] | tuple[str, ...] | None = None,
 ):
     """Build numeric author-inspired early-cycle features.
 
@@ -301,6 +381,19 @@ def build_all_battery_features(
         protocol = build_protocol_features(metadata)
         parts.append(protocol)
         metadata_rows.append(_feature_metadata(protocol, "protocol"))
+    mode = str(feature_program_mode or "none").lower()
+    program_paths = _as_path_list(feature_program_paths)
+    should_include_programs = include_feature_programs or mode in {"table", "auto"}
+    if should_include_programs:
+        if mode == "table" and not program_paths:
+            raise ValueError("feature_program_mode='table' requires feature_program_paths")
+        if program_paths:
+            program_parts, program_metadata = _load_feature_program_features(
+                [str(path) for path in program_paths],
+                feature_family_filter=feature_family_filter,
+            )
+            parts.extend(program_parts)
+            metadata_rows.extend(program_metadata)
     features = pd.concat(parts, axis=1, join="outer") if parts else pd.DataFrame()
     features = _drop_empty_numeric_columns(features)
     features = features.loc[:, ~features.columns.duplicated()]

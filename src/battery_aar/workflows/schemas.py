@@ -92,6 +92,10 @@ class FeaturePlan(ArtifactBase):
     feature_families: list[str] = Field(default_factory=list)
     selected_columns: list[str] = Field(default_factory=list)
     include_protocol_features: bool = False
+    feature_program_ids: list[str] = Field(default_factory=list)
+    feature_program_paths: list[str] = Field(default_factory=list)
+    feature_program_recipe: str | None = None
+    feature_set: str = "all_available"
     max_cycle: int | None = None
     rationale: str | None = None
     constraints: list[str] = Field(default_factory=list)
@@ -105,9 +109,50 @@ class ModelPlan(ArtifactBase):
     model_family: str
     estimator_name: str | None = None
     target_transform: str = "raw"
+    feature_set: str = "all_available"
     hyperparameters: dict[str, Any] = Field(default_factory=dict)
     preprocessing_steps: list[str] = Field(default_factory=list)
     rationale: str | None = None
+
+
+class FeatureOperatorSpec(BaseModel):
+    operator_name: str
+    operator_type: str
+    family: str
+    enabled: bool = True
+    params: dict[str, Any] = Field(default_factory=dict)
+    feature_prefix: str | None = None
+    description: str | None = None
+    hypothesis: str | None = None
+
+
+class FeatureProgram(ArtifactBase):
+    artifact_type: Literal["FeatureProgram"] = "FeatureProgram"
+    program_id: str
+    name: str
+    description: str
+    operators: list[FeatureOperatorSpec] = Field(default_factory=list)
+    include_protocol_features: bool = False
+    cycle_index_convention: str = "raw_zero_based"
+    first_n_cycles: int = 100
+    feature_selection_policy: dict[str, Any] | None = None
+    proposed_by: str | None = None
+    rationale: str | None = None
+
+
+class FeatureProgramResult(ArtifactBase):
+    artifact_type: Literal["FeatureProgramResult"] = "FeatureProgramResult"
+    program_id: str
+    feature_table_path: str
+    feature_metadata_path: str
+    n_rows: int
+    n_feature_columns: int
+    n_numeric_feature_columns: int
+    n_excluded_cells: int
+    n_pruned_all_nan_features: int = 0
+    feature_family_counts: dict[str, int] = Field(default_factory=dict)
+    operator_status: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class CandidateSpec(ArtifactBase):
@@ -128,6 +173,11 @@ class CandidateSpec(ArtifactBase):
     include_protocol_features: bool = False
     model_family: str | None = None
     target_transform: str = "raw"
+    feature_set: str = "all_available"
+    feature_program_paths: list[str] = Field(default_factory=list)
+    feature_program_mode: str = "none"
+    include_feature_programs: bool = False
+    feature_family_filter: list[str] = Field(default_factory=list)
     preprocessing: list[str] = Field(default_factory=list)
     hyperparameters: dict[str, Any] = Field(default_factory=dict)
 
@@ -218,6 +268,8 @@ ArtifactModel = Union[
     SplitArtifact,
     FeaturePlan,
     ModelPlan,
+    FeatureProgram,
+    FeatureProgramResult,
     CandidateSpec,
     ReviewReport,
     EvaluationReport,

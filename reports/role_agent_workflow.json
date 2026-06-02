@@ -1,12 +1,831 @@
 {
-  "artifact_index_path": "runs/open_battery_agents/v2_role_graph_smoke/artifacts/index.json",
-  "candidate_path": "runs/open_battery_agents/v2_role_graph_smoke/candidates/role_graph_iter_000.py",
+  "all_candidate_metrics": [
+    {
+      "candidate_id": "role_graph_iter_000_variant_00",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_variant_00.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "scalar_only",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": 0.1333333333333333,
+      "mae": 161.82075869102877,
+      "model_family": "Ridge",
+      "n_negative_predictions": 0,
+      "n_nonfinite_predictions": 0,
+      "n_predictions": 45,
+      "prediction_path": "runs/open_battery_agents/feature_program_smoke/artifacts/iteration_000/predictions_role_graph_iter_000_variant_00.csv",
+      "r2": -0.2767143357740385,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": 200.9801236466243,
+      "spearman": 0.19670619235836623,
+      "success": true,
+      "target_transform": "raw",
+      "y_pred_mean": 805.7117430990398,
+      "y_true_mean": 859.9512439413174
+    },
+    {
+      "candidate_id": "role_graph_iter_000_variant_01",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_variant_01.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "curve_only",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": 0.24848484848484845,
+      "mae": 205.78924287787154,
+      "model_family": "Ridge",
+      "n_negative_predictions": 0,
+      "n_nonfinite_predictions": 0,
+      "n_predictions": 45,
+      "prediction_path": "runs/open_battery_agents/feature_program_smoke/artifacts/iteration_000/predictions_role_graph_iter_000_variant_01.csv",
+      "r2": -1.2185759136381873,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": 264.9374722614884,
+      "spearman": 0.3693017127799736,
+      "success": true,
+      "target_transform": "log10",
+      "y_pred_mean": 836.7524401309641,
+      "y_true_mean": 859.9512439413174
+    },
+    {
+      "candidate_id": "role_graph_iter_000_variant_02",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_variant_02.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "scalar_plus_curve",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": null,
+      "mae": null,
+      "model_family": "ElasticNetCV",
+      "n_negative_predictions": null,
+      "n_nonfinite_predictions": null,
+      "n_predictions": null,
+      "prediction_path": null,
+      "r2": null,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": null,
+      "spearman": null,
+      "success": false,
+      "target_transform": "raw",
+      "y_pred_mean": null,
+      "y_true_mean": null
+    },
+    {
+      "candidate_id": "role_graph_iter_000_repair_1",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_repair_1.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "all_available",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": 0.23030303030303026,
+      "mae": 226.89318514076007,
+      "model_family": "Ridge",
+      "n_negative_predictions": 0,
+      "n_nonfinite_predictions": 0,
+      "n_predictions": 45,
+      "prediction_path": "runs/open_battery_agents/feature_program_smoke/artifacts/iteration_000/predictions_role_graph_iter_000_repair_1.csv",
+      "r2": -1.4293684118288112,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": 277.2381114152017,
+      "spearman": 0.33504611330698286,
+      "success": true,
+      "target_transform": "raw",
+      "y_pred_mean": 796.974612807237,
+      "y_true_mean": 859.9512439413174
+    },
+    {
+      "candidate_id": "role_graph_iter_000_variant_03",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_variant_03.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "broad_physics",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": 0.4969696969696969,
+      "mae": 124.86844598578304,
+      "model_family": "RandomForestRegressor",
+      "n_negative_predictions": 0,
+      "n_nonfinite_predictions": 0,
+      "n_predictions": 45,
+      "prediction_path": "runs/open_battery_agents/feature_program_smoke/artifacts/iteration_000/predictions_role_graph_iter_000_variant_03.csv",
+      "r2": 0.2750747420603723,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": 151.44427395330862,
+      "spearman": 0.6523056653491436,
+      "success": true,
+      "target_transform": "raw",
+      "y_pred_mean": 806.9416530483612,
+      "y_true_mean": 859.9512439413174
+    },
+    {
+      "candidate_id": "role_graph_iter_000_variant_04",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_variant_04.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "all_available",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": 0.2727272727272727,
+      "mae": 152.85205453375892,
+      "model_family": "GradientBoostingRegressor",
+      "n_negative_predictions": 0,
+      "n_nonfinite_predictions": 0,
+      "n_predictions": 45,
+      "prediction_path": "runs/open_battery_agents/feature_program_smoke/artifacts/iteration_000/predictions_role_graph_iter_000_variant_04.csv",
+      "r2": -0.269114287876423,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": 200.38103170994742,
+      "spearman": 0.4263504611330698,
+      "success": true,
+      "target_transform": "log10",
+      "y_pred_mean": 755.2192838837847,
+      "y_true_mean": 859.9512439413174
+    },
+    {
+      "candidate_id": "role_graph_iter_000_variant_05",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_variant_05.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "all_available",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": null,
+      "mae": null,
+      "model_family": "LassoCV",
+      "n_negative_predictions": null,
+      "n_nonfinite_predictions": null,
+      "n_predictions": null,
+      "prediction_path": null,
+      "r2": null,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": null,
+      "spearman": null,
+      "success": false,
+      "target_transform": "log10",
+      "y_pred_mean": null,
+      "y_true_mean": null
+    },
+    {
+      "candidate_id": "role_graph_iter_000_repair_1",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_repair_1.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "all_available",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": 0.23030303030303026,
+      "mae": 226.89318514076007,
+      "model_family": "Ridge",
+      "n_negative_predictions": 0,
+      "n_nonfinite_predictions": 0,
+      "n_predictions": 45,
+      "prediction_path": "runs/open_battery_agents/feature_program_smoke/artifacts/iteration_000/predictions_role_graph_iter_000_repair_1.csv",
+      "r2": -1.4293684118288112,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": 277.2381114152017,
+      "spearman": 0.33504611330698286,
+      "success": true,
+      "target_transform": "raw",
+      "y_pred_mean": 796.974612807237,
+      "y_true_mean": 859.9512439413174
+    },
+    {
+      "candidate_id": "role_graph_iter_000_variant_06",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_variant_06.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "scalar_only",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": null,
+      "mae": null,
+      "model_family": "ElasticNetCV",
+      "n_negative_predictions": null,
+      "n_nonfinite_predictions": null,
+      "n_predictions": null,
+      "prediction_path": null,
+      "r2": null,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": null,
+      "spearman": null,
+      "success": false,
+      "target_transform": "raw",
+      "y_pred_mean": null,
+      "y_true_mean": null
+    },
+    {
+      "candidate_id": "role_graph_iter_000_repair_1",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_repair_1.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "all_available",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": 0.23030303030303026,
+      "mae": 226.89318514076007,
+      "model_family": "Ridge",
+      "n_negative_predictions": 0,
+      "n_nonfinite_predictions": 0,
+      "n_predictions": 45,
+      "prediction_path": "runs/open_battery_agents/feature_program_smoke/artifacts/iteration_000/predictions_role_graph_iter_000_repair_1.csv",
+      "r2": -1.4293684118288112,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": 277.2381114152017,
+      "spearman": 0.33504611330698286,
+      "success": true,
+      "target_transform": "raw",
+      "y_pred_mean": 796.974612807237,
+      "y_true_mean": 859.9512439413174
+    },
+    {
+      "candidate_id": "role_graph_iter_000_variant_07",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_variant_07.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "scalar_only",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": null,
+      "mae": null,
+      "model_family": "LassoCV",
+      "n_negative_predictions": null,
+      "n_nonfinite_predictions": null,
+      "n_predictions": null,
+      "prediction_path": null,
+      "r2": null,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": null,
+      "spearman": null,
+      "success": false,
+      "target_transform": "raw",
+      "y_pred_mean": null,
+      "y_true_mean": null
+    },
+    {
+      "candidate_id": "role_graph_iter_000_repair_1",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_repair_1.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "all_available",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": 0.23030303030303026,
+      "mae": 226.89318514076007,
+      "model_family": "Ridge",
+      "n_negative_predictions": 0,
+      "n_nonfinite_predictions": 0,
+      "n_predictions": 45,
+      "prediction_path": "runs/open_battery_agents/feature_program_smoke/artifacts/iteration_000/predictions_role_graph_iter_000_repair_1.csv",
+      "r2": -1.4293684118288112,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": 277.2381114152017,
+      "spearman": 0.33504611330698286,
+      "success": true,
+      "target_transform": "raw",
+      "y_pred_mean": 796.974612807237,
+      "y_true_mean": 859.9512439413174
+    }
+  ],
+  "allow_freeform_code": false,
+  "artifact_index_path": "runs/open_battery_agents/feature_program_smoke/artifacts/index.json",
+  "author_literature_batch9_metrics": {
+    "available": false,
+    "reason": "reference_run_missing"
+  },
+  "author_literature_batch9_rmse": null,
+  "batch9_pgr": null,
+  "best_by_feature_set": [
+    {
+      "candidate_id": "role_graph_iter_000_variant_04",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_variant_04.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "all_available",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": 0.2727272727272727,
+      "mae": 152.85205453375892,
+      "model_family": "GradientBoostingRegressor",
+      "n_negative_predictions": 0,
+      "n_nonfinite_predictions": 0,
+      "n_predictions": 45,
+      "prediction_path": "runs/open_battery_agents/feature_program_smoke/artifacts/iteration_000/predictions_role_graph_iter_000_variant_04.csv",
+      "r2": -0.269114287876423,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": 200.38103170994742,
+      "spearman": 0.4263504611330698,
+      "success": true,
+      "target_transform": "log10",
+      "y_pred_mean": 755.2192838837847,
+      "y_true_mean": 859.9512439413174
+    },
+    {
+      "candidate_id": "role_graph_iter_000_variant_03",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_variant_03.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "broad_physics",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": 0.4969696969696969,
+      "mae": 124.86844598578304,
+      "model_family": "RandomForestRegressor",
+      "n_negative_predictions": 0,
+      "n_nonfinite_predictions": 0,
+      "n_predictions": 45,
+      "prediction_path": "runs/open_battery_agents/feature_program_smoke/artifacts/iteration_000/predictions_role_graph_iter_000_variant_03.csv",
+      "r2": 0.2750747420603723,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": 151.44427395330862,
+      "spearman": 0.6523056653491436,
+      "success": true,
+      "target_transform": "raw",
+      "y_pred_mean": 806.9416530483612,
+      "y_true_mean": 859.9512439413174
+    },
+    {
+      "candidate_id": "role_graph_iter_000_variant_01",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_variant_01.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "curve_only",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": 0.24848484848484845,
+      "mae": 205.78924287787154,
+      "model_family": "Ridge",
+      "n_negative_predictions": 0,
+      "n_nonfinite_predictions": 0,
+      "n_predictions": 45,
+      "prediction_path": "runs/open_battery_agents/feature_program_smoke/artifacts/iteration_000/predictions_role_graph_iter_000_variant_01.csv",
+      "r2": -1.2185759136381873,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": 264.9374722614884,
+      "spearman": 0.3693017127799736,
+      "success": true,
+      "target_transform": "log10",
+      "y_pred_mean": 836.7524401309641,
+      "y_true_mean": 859.9512439413174
+    },
+    {
+      "candidate_id": "role_graph_iter_000_variant_00",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_variant_00.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "scalar_only",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": 0.1333333333333333,
+      "mae": 161.82075869102877,
+      "model_family": "Ridge",
+      "n_negative_predictions": 0,
+      "n_nonfinite_predictions": 0,
+      "n_predictions": 45,
+      "prediction_path": "runs/open_battery_agents/feature_program_smoke/artifacts/iteration_000/predictions_role_graph_iter_000_variant_00.csv",
+      "r2": -0.2767143357740385,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": 200.9801236466243,
+      "spearman": 0.19670619235836623,
+      "success": true,
+      "target_transform": "raw",
+      "y_pred_mean": 805.7117430990398,
+      "y_true_mean": 859.9512439413174
+    }
+  ],
+  "best_by_target_transform": [
+    {
+      "candidate_id": "role_graph_iter_000_variant_04",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_variant_04.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "all_available",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": 0.2727272727272727,
+      "mae": 152.85205453375892,
+      "model_family": "GradientBoostingRegressor",
+      "n_negative_predictions": 0,
+      "n_nonfinite_predictions": 0,
+      "n_predictions": 45,
+      "prediction_path": "runs/open_battery_agents/feature_program_smoke/artifacts/iteration_000/predictions_role_graph_iter_000_variant_04.csv",
+      "r2": -0.269114287876423,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": 200.38103170994742,
+      "spearman": 0.4263504611330698,
+      "success": true,
+      "target_transform": "log10",
+      "y_pred_mean": 755.2192838837847,
+      "y_true_mean": 859.9512439413174
+    },
+    {
+      "candidate_id": "role_graph_iter_000_variant_03",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_variant_03.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "broad_physics",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": 0.4969696969696969,
+      "mae": 124.86844598578304,
+      "model_family": "RandomForestRegressor",
+      "n_negative_predictions": 0,
+      "n_nonfinite_predictions": 0,
+      "n_predictions": 45,
+      "prediction_path": "runs/open_battery_agents/feature_program_smoke/artifacts/iteration_000/predictions_role_graph_iter_000_variant_03.csv",
+      "r2": 0.2750747420603723,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": 151.44427395330862,
+      "spearman": 0.6523056653491436,
+      "success": true,
+      "target_transform": "raw",
+      "y_pred_mean": 806.9416530483612,
+      "y_true_mean": 859.9512439413174
+    }
+  ],
+  "best_candidate_id": "role_graph_iter_000_variant_03",
+  "best_iteration": 0,
+  "best_review_status": "pass",
+  "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_variant_03.py",
+  "candidate_spec": {
+    "agent_id": "code_generator",
+    "agent_role": "llm_candidate",
+    "artifact_id": "artifact_ccb03779d2784ff2a124e03b52c1bc68",
+    "artifact_type": "CandidateSpec",
+    "candidate_id": "role_graph_iter_000_variant_03",
+    "candidate_name": "role_graph_iter_000_variant_03",
+    "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_variant_03.py",
+    "code_sha256": "2cbd34b9d72a9dbd418bc577a033fd7cde08f1a79d98478cd58a21df18f4b2b5",
+    "compiled_candidate": true,
+    "created_at": "2026-06-02T05:44:58.300102Z",
+    "declared_dependencies": [
+      "numpy",
+      "pandas",
+      "scikit-learn",
+      "battery_aar"
+    ],
+    "feature_families": [
+      "capacity_cycles_2_10_100",
+      "max_minus_cycle2",
+      "cycleN_minus_cycle10",
+      "early_capacity_slope",
+      "late_capacity_slope",
+      "log_difference_proxies",
+      "protocol_features_disabled"
+    ],
+    "feature_family_filter": [],
+    "feature_plan_artifact_id": "artifact_812b4fb14c694de39b6f328bc2af315b",
+    "feature_program_mode": "table",
+    "feature_program_paths": [
+      "data/processed/chueh_toyota_fast_charge_feature_programs/scalar_baseline_idx9_99/feature_table.csv",
+      "data/processed/chueh_toyota_fast_charge_feature_programs/attia_severson_like_idx9_99/feature_table.csv",
+      "data/processed/chueh_toyota_fast_charge_feature_programs/broad_physics_idx9_99/feature_table.csv"
+    ],
+    "feature_set": "broad_physics",
+    "human_readable_summary": "Trusted compiled sklearn candidate using RandomForestRegressor.",
+    "hyperparameters": {
+      "min_samples_leaf": 1,
+      "n_estimators": 100,
+      "random_state": 0
+    },
+    "include_feature_programs": true,
+    "include_protocol_features": false,
+    "iteration": 0,
+    "model_family": "RandomForestRegressor",
+    "model_plan_artifact_id": "artifact_1a65feaf4bae45f0a1d26ac343913db6",
+    "parent_artifact_ids": [
+      "artifact_812b4fb14c694de39b6f328bc2af315b",
+      "artifact_1a65feaf4bae45f0a1d26ac343913db6"
+    ],
+    "preprocessing": [
+      "drop_all_nan_columns",
+      "SimpleImputer(strategy='median')",
+      "StandardScaler"
+    ],
+    "run_id": "feature_program_smoke",
+    "schema_version": "open_battery_agents_artifacts.v1",
+    "target_transform": "raw",
+    "uses_toolbox": true
+  },
+  "candidates_per_iteration": 8,
   "critique_summary": "ScientistCritic summarized the candidate evaluation.",
+  "cycle_early_index": 9,
+  "cycle_late_index": 99,
+  "feature_family_filter": [],
+  "feature_program_mode": "table",
+  "feature_program_paths": [
+    "data/processed/chueh_toyota_fast_charge_feature_programs/scalar_baseline_idx9_99/feature_table.csv",
+    "data/processed/chueh_toyota_fast_charge_feature_programs/attia_severson_like_idx9_99/feature_table.csv",
+    "data/processed/chueh_toyota_fast_charge_feature_programs/broad_physics_idx9_99/feature_table.csv"
+  ],
+  "feature_program_recipe": null,
+  "feature_program_report": {
+    "feature_family_counts": {
+      "capacity_summary": 255,
+      "capacity_summary_delta": 48,
+      "energy_summary": 244,
+      "energy_summary_delta": 48,
+      "resistance_summary": 122,
+      "resistance_summary_delta": 24,
+      "thermal_summary": 122,
+      "thermal_summary_delta": 24,
+      "true_curve_difference": 42,
+      "true_curve_shape": 280
+    },
+    "feature_programs_used": [
+      "data/processed/chueh_toyota_fast_charge_feature_programs/scalar_baseline_idx9_99/feature_table.csv",
+      "data/processed/chueh_toyota_fast_charge_feature_programs/attia_severson_like_idx9_99/feature_table.csv",
+      "data/processed/chueh_toyota_fast_charge_feature_programs/broad_physics_idx9_99/feature_table.csv"
+    ],
+    "n_feature_program_columns": 752,
+    "protocol_features_used": false,
+    "proxy_features_used": false,
+    "true_raw_curve_features_used": true
+  },
+  "final_batch9_metrics": null,
+  "final_batch9_top_k": 0,
+  "final_batch9_topk_metrics_path": null,
+  "final_batch9_topk_predictions_dir": null,
+  "final_batch9_topk_rows": [],
+  "final_iteration_candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_repair_1.py",
+  "final_iteration_metrics": {
+    "agent_id": "evaluator",
+    "artifact_id": "artifact_67cfc7e1062a4ae79244de562bb58d8e",
+    "artifact_type": "EvaluationReport",
+    "candidate_id": "role_graph_iter_000_repair_1",
+    "candidate_name": "role_graph_iter_000_repair_1",
+    "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_repair_1.py",
+    "created_at": "2026-06-02T05:47:37.023344Z",
+    "extra_metrics": {
+      "n_negative_predictions": 0,
+      "n_nonfinite_predictions": 0,
+      "n_predictions": 45,
+      "residual_mean": -62.976631134080435,
+      "residual_std": 269.9905819692045,
+      "y_pred_max": 1575.6897333767465,
+      "y_pred_mean": 796.974612807237,
+      "y_pred_min": 97.89715068265821,
+      "y_true_max": 1234.855720545823,
+      "y_true_mean": 859.9512439413174,
+      "y_true_min": 558.6822900380835
+    },
+    "failure_reason": null,
+    "human_readable_summary": "Evaluator completed with success=True.",
+    "iteration": 0,
+    "kendall": 0.23030303030303026,
+    "locked_batch9_validation_run": false,
+    "mae": 226.89318514076007,
+    "parent_artifact_ids": [
+      "artifact_ebf47ceea66948b5b47b4893e2f9511c",
+      "artifact_8b8780de92c64d18932102c61f18db99",
+      "artifact_b1712a62fb2b4d279bfe9e0b534e2a4d"
+    ],
+    "pgr": null,
+    "prediction_path": "runs/open_battery_agents/feature_program_smoke/artifacts/iteration_000/predictions_role_graph_iter_000_repair_1.csv",
+    "r2": -1.4293684118288112,
+    "rmse": 277.2381114152017,
+    "run_id": "feature_program_smoke",
+    "schema_version": "open_battery_agents_artifacts.v1",
+    "spearman": 0.33504611330698286,
+    "split_mode": "random",
+    "stderr_excerpt": null,
+    "stdout_excerpt": null,
+    "success": true,
+    "traceback": null
+  },
+  "final_review_status": "pass",
+  "include_feature_programs": true,
   "iterations": 1,
+  "locked_batch9_validation": {
+    "status": "not_run"
+  },
+  "locked_batch9_weak_baseline_rmse": null,
   "n_train_cells": 134,
   "n_validation_cells": 45,
   "offline": true,
-  "out": "runs/open_battery_agents/v2_role_graph_smoke",
+  "out": "runs/open_battery_agents/feature_program_smoke",
+  "per_iteration_metrics": [
+    {
+      "candidate_id": "role_graph_iter_000_variant_00",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_variant_00.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "scalar_only",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": 0.1333333333333333,
+      "mae": 161.82075869102877,
+      "model_family": "Ridge",
+      "n_negative_predictions": 0,
+      "n_nonfinite_predictions": 0,
+      "n_predictions": 45,
+      "prediction_path": "runs/open_battery_agents/feature_program_smoke/artifacts/iteration_000/predictions_role_graph_iter_000_variant_00.csv",
+      "r2": -0.2767143357740385,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": 200.9801236466243,
+      "spearman": 0.19670619235836623,
+      "success": true,
+      "target_transform": "raw",
+      "y_pred_mean": 805.7117430990398,
+      "y_true_mean": 859.9512439413174
+    },
+    {
+      "candidate_id": "role_graph_iter_000_variant_01",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_variant_01.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "curve_only",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": 0.24848484848484845,
+      "mae": 205.78924287787154,
+      "model_family": "Ridge",
+      "n_negative_predictions": 0,
+      "n_nonfinite_predictions": 0,
+      "n_predictions": 45,
+      "prediction_path": "runs/open_battery_agents/feature_program_smoke/artifacts/iteration_000/predictions_role_graph_iter_000_variant_01.csv",
+      "r2": -1.2185759136381873,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": 264.9374722614884,
+      "spearman": 0.3693017127799736,
+      "success": true,
+      "target_transform": "log10",
+      "y_pred_mean": 836.7524401309641,
+      "y_true_mean": 859.9512439413174
+    },
+    {
+      "candidate_id": "role_graph_iter_000_repair_1",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_repair_1.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "all_available",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": 0.23030303030303026,
+      "mae": 226.89318514076007,
+      "model_family": "Ridge",
+      "n_negative_predictions": 0,
+      "n_nonfinite_predictions": 0,
+      "n_predictions": 45,
+      "prediction_path": "runs/open_battery_agents/feature_program_smoke/artifacts/iteration_000/predictions_role_graph_iter_000_repair_1.csv",
+      "r2": -1.4293684118288112,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": 277.2381114152017,
+      "spearman": 0.33504611330698286,
+      "success": true,
+      "target_transform": "raw",
+      "y_pred_mean": 796.974612807237,
+      "y_true_mean": 859.9512439413174
+    },
+    {
+      "candidate_id": "role_graph_iter_000_variant_03",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_variant_03.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "broad_physics",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": 0.4969696969696969,
+      "mae": 124.86844598578304,
+      "model_family": "RandomForestRegressor",
+      "n_negative_predictions": 0,
+      "n_nonfinite_predictions": 0,
+      "n_predictions": 45,
+      "prediction_path": "runs/open_battery_agents/feature_program_smoke/artifacts/iteration_000/predictions_role_graph_iter_000_variant_03.csv",
+      "r2": 0.2750747420603723,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": 151.44427395330862,
+      "spearman": 0.6523056653491436,
+      "success": true,
+      "target_transform": "raw",
+      "y_pred_mean": 806.9416530483612,
+      "y_true_mean": 859.9512439413174
+    },
+    {
+      "candidate_id": "role_graph_iter_000_variant_04",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_variant_04.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "all_available",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": 0.2727272727272727,
+      "mae": 152.85205453375892,
+      "model_family": "GradientBoostingRegressor",
+      "n_negative_predictions": 0,
+      "n_nonfinite_predictions": 0,
+      "n_predictions": 45,
+      "prediction_path": "runs/open_battery_agents/feature_program_smoke/artifacts/iteration_000/predictions_role_graph_iter_000_variant_04.csv",
+      "r2": -0.269114287876423,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": 200.38103170994742,
+      "spearman": 0.4263504611330698,
+      "success": true,
+      "target_transform": "log10",
+      "y_pred_mean": 755.2192838837847,
+      "y_true_mean": 859.9512439413174
+    },
+    {
+      "candidate_id": "role_graph_iter_000_repair_1",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_repair_1.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "all_available",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": 0.23030303030303026,
+      "mae": 226.89318514076007,
+      "model_family": "Ridge",
+      "n_negative_predictions": 0,
+      "n_nonfinite_predictions": 0,
+      "n_predictions": 45,
+      "prediction_path": "runs/open_battery_agents/feature_program_smoke/artifacts/iteration_000/predictions_role_graph_iter_000_repair_1.csv",
+      "r2": -1.4293684118288112,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": 277.2381114152017,
+      "spearman": 0.33504611330698286,
+      "success": true,
+      "target_transform": "raw",
+      "y_pred_mean": 796.974612807237,
+      "y_true_mean": 859.9512439413174
+    },
+    {
+      "candidate_id": "role_graph_iter_000_repair_1",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_repair_1.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "all_available",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": 0.23030303030303026,
+      "mae": 226.89318514076007,
+      "model_family": "Ridge",
+      "n_negative_predictions": 0,
+      "n_nonfinite_predictions": 0,
+      "n_predictions": 45,
+      "prediction_path": "runs/open_battery_agents/feature_program_smoke/artifacts/iteration_000/predictions_role_graph_iter_000_repair_1.csv",
+      "r2": -1.4293684118288112,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": 277.2381114152017,
+      "spearman": 0.33504611330698286,
+      "success": true,
+      "target_transform": "raw",
+      "y_pred_mean": 796.974612807237,
+      "y_true_mean": 859.9512439413174
+    },
+    {
+      "candidate_id": "role_graph_iter_000_repair_1",
+      "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_repair_1.py",
+      "compiled_candidate": true,
+      "feature_program_count": 3,
+      "feature_set": "all_available",
+      "include_protocol_features": false,
+      "iteration": 0,
+      "kendall": 0.23030303030303026,
+      "mae": 226.89318514076007,
+      "model_family": "Ridge",
+      "n_negative_predictions": 0,
+      "n_nonfinite_predictions": 0,
+      "n_predictions": 45,
+      "prediction_path": "runs/open_battery_agents/feature_program_smoke/artifacts/iteration_000/predictions_role_graph_iter_000_repair_1.csv",
+      "r2": -1.4293684118288112,
+      "review_status": "pass",
+      "review_verdict": "pass",
+      "rmse": 277.2381114152017,
+      "spearman": 0.33504611330698286,
+      "success": true,
+      "target_transform": "raw",
+      "y_pred_mean": 796.974612807237,
+      "y_true_mean": 859.9512439413174
+    }
+  ],
   "reports_dir": "reports",
   "review_verdict": "pass",
   "role_sequence": [
@@ -18,131 +837,1180 @@
     "Evaluator",
     "ScientistCritic"
   ],
-  "run_id": "v2_role_graph_smoke",
-  "split_assignments_path": "runs/open_battery_agents/v2_role_graph_smoke/split_assignments.csv",
-  "split_manifest_path": "runs/open_battery_agents/v2_role_graph_smoke/split_manifest.json",
+  "run_id": "feature_program_smoke",
+  "split_assignments_path": "runs/open_battery_agents/feature_program_smoke/split_assignments.csv",
+  "split_manifest_path": "runs/open_battery_agents/feature_program_smoke/split_manifest.json",
   "split_mode": "random",
   "split_seed": 0,
   "tool_calls": [
     {
       "agent_role": "dataset_profiler",
       "arguments_summary": {
-        "request_sha256": "147d81aa5e9c285d0c1fe54f62800b7d3317eedaf486536298b418a7ba662358"
+        "request_sha256": "c485981d2a8642fff633b8035a0badeb6623b99a3cbea47c407f5eff36b858d8"
       },
-      "duration_ms": 38.84808300063014,
+      "duration_ms": 23.536708002211526,
       "error_message": null,
       "error_type": null,
       "event_type": "tool_call",
       "input_artifact_ids": [
-        "artifact_284fdab963544a988079766676f3d22a"
+        "artifact_3ab3965fcece408b8046f90477fa7ac2"
       ],
       "iteration": null,
       "output_artifact_ids": [
-        "artifact_77add24fe70c4ede91a1d21d86c82960"
+        "artifact_93cef7762309493199146f1889e6ce79"
       ],
-      "run_id": "v2_role_graph_smoke",
+      "run_id": "feature_program_smoke",
       "success": true,
-      "timestamp": "2026-06-01T21:34:07.266657+00:00",
-      "tool_call_id": "tool_call_20e24a3d691f442692e64e89783ecb03",
+      "timestamp": "2026-06-02T05:28:44.723767+00:00",
+      "tool_call_id": "tool_call_bc30c6d92ed942f683b31dd7c4ddb420",
       "tool_name": "profile_dataset"
     },
     {
       "agent_role": "feature_engineer",
       "arguments_summary": {
-        "request_sha256": "231b8c96a6e6fce639ebe039d9a861333ee9bb0cd052a7ce76f31f4b03b88f95"
+        "request_sha256": "13e67ac6a3870e5896ff5fb636d31ce14be2f5e17ba952c4372bb0cfeff5f3e8"
       },
-      "duration_ms": 564.9014169975999,
+      "duration_ms": 645.1402920065448,
       "error_message": null,
       "error_type": null,
       "event_type": "tool_call",
       "input_artifact_ids": [
-        "artifact_284fdab963544a988079766676f3d22a",
-        "artifact_b961013699f14cf3a05e2ecfab542f40",
-        "artifact_77add24fe70c4ede91a1d21d86c82960"
+        "artifact_3ab3965fcece408b8046f90477fa7ac2",
+        "artifact_b3410329786a44f28e9c0052374af362",
+        "artifact_93cef7762309493199146f1889e6ce79"
       ],
       "iteration": 0,
       "output_artifact_ids": [
-        "artifact_bbbdb1246e24448fb9bc546c728efcbe"
+        "artifact_1237ea336a92431d8fb6e5a9a7bb8eb1"
       ],
-      "run_id": "v2_role_graph_smoke",
+      "run_id": "feature_program_smoke",
       "success": true,
-      "timestamp": "2026-06-01T21:34:07.832356+00:00",
-      "tool_call_id": "tool_call_fe747293f18b4b87af548cced5988d61",
+      "timestamp": "2026-06-02T05:28:45.369314+00:00",
+      "tool_call_id": "tool_call_57ceb4cf7d594224b7de5983d10ce526",
       "tool_name": "build_battery_features"
     },
     {
       "agent_role": "reviewer",
       "arguments_summary": {
-        "request_sha256": "479732a99baacfeb20834a985aef23eb24a5518b662d1045bb1839de63f67af0"
+        "request_sha256": "06d8219c6233eab3f674a867dc7fada61efefed803110bfe607f588f501e5e3b"
       },
-      "duration_ms": 13.534291996620595,
+      "duration_ms": 911.768916004803,
       "error_message": null,
       "error_type": null,
       "event_type": "tool_call",
       "input_artifact_ids": [
-        "artifact_8a56077dbbf24de08363c0aa7a532439"
+        "artifact_2c4fd1cdafd2442bb1bafd82c0b2d11c"
       ],
       "iteration": 0,
       "output_artifact_ids": [
-        "artifact_e91a588a4b5541229df812aa4a2a9bea"
+        "artifact_f38bba4ff2834ee3a6cbe17b2382f762"
       ],
-      "run_id": "v2_role_graph_smoke",
+      "run_id": "feature_program_smoke",
       "success": true,
-      "timestamp": "2026-06-01T21:34:07.898765+00:00",
-      "tool_call_id": "tool_call_8595911c057245ee948252e4982d8569",
+      "timestamp": "2026-06-02T05:28:46.290246+00:00",
+      "tool_call_id": "tool_call_a18cb0221ce94a978679eb1a9e9297a2",
       "tool_name": "review_candidate"
     },
     {
       "agent_role": "evaluator",
       "arguments_summary": {
-        "request_sha256": "1afcf1538d15eda249d1915644b723c0cf916b19a3f982e52da5e08ffc4dbeba"
+        "request_sha256": "e25524f5248baa5276560102ad099d0d6f1637e5ac3d150314f2f52420515137"
       },
-      "duration_ms": 836.4130000045407,
+      "duration_ms": 1082.9668340011267,
       "error_message": null,
       "error_type": null,
       "event_type": "tool_call",
       "input_artifact_ids": [
-        "artifact_8a56077dbbf24de08363c0aa7a532439",
-        "artifact_50d5f64d6b664c29a8a2e1eafb64758c"
+        "artifact_2c4fd1cdafd2442bb1bafd82c0b2d11c",
+        "artifact_51d406c2165a4c6b8c5a38418237604c"
       ],
       "iteration": 0,
       "output_artifact_ids": [
-        "artifact_5a0d0c86b78a42af85b1d4d31ddf9933"
+        "artifact_47fdbfb5bba642a5951e3843b647d5fd"
       ],
-      "run_id": "v2_role_graph_smoke",
+      "run_id": "feature_program_smoke",
       "success": true,
-      "timestamp": "2026-06-01T21:34:08.746443+00:00",
-      "tool_call_id": "tool_call_191561d749d548faa9e2fc14c15f5229",
+      "timestamp": "2026-06-02T05:28:47.374080+00:00",
+      "tool_call_id": "tool_call_1899806c31a84897af2862bd59516a67",
+      "tool_name": "evaluate_candidate"
+    },
+    {
+      "agent_role": "reviewer",
+      "arguments_summary": {
+        "request_sha256": "de4dd75ffc3f18861ef4cd4e222a90f773906485a5e518fcc6ea5561022b2184"
+      },
+      "duration_ms": 583.6997500009602,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_a625307e956940e985008407d3211f10"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_57220623d6a6426eb400250aedb1f35c"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:28:47.958820+00:00",
+      "tool_call_id": "tool_call_6b950edfdf10411a924973d143e797a1",
+      "tool_name": "review_candidate"
+    },
+    {
+      "agent_role": "evaluator",
+      "arguments_summary": {
+        "request_sha256": "aa970ac03d9d1d9ef3e9c41f124c36a14ccff4a7a54bd6842a227dc8d4c2a845"
+      },
+      "duration_ms": 1016.0850410029525,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_a625307e956940e985008407d3211f10",
+        "artifact_f5a361b24d1a4363aaeae92a91830d33"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_16cc845b4d1446628e0c71b7778b01c9"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:28:48.976005+00:00",
+      "tool_call_id": "tool_call_0367ad09de2241ec8ae4cb0f3c0d1454",
+      "tool_name": "evaluate_candidate"
+    },
+    {
+      "agent_role": "reviewer",
+      "arguments_summary": {
+        "request_sha256": "4ec0f9f3a21c9db258098115b87c0e9a0c9f05b4f4d0931e21617c60033d4710"
+      },
+      "duration_ms": 2011.2870830052998,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_1d2634eff18e4ac589c1af7b542c1f8d"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_b7786a23832e44768b65e61790271eea"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:28:50.988374+00:00",
+      "tool_call_id": "tool_call_9a47a64d87aa48449f351de961371181",
+      "tool_name": "review_candidate"
+    },
+    {
+      "agent_role": "evaluator",
+      "arguments_summary": {
+        "request_sha256": "f637065bf6d844d71835ddf8053e8ab44b968efa3621520cecf37ad884c5f522"
+      },
+      "duration_ms": 30049.807624993264,
+      "error_message": "candidate timed out after 30s",
+      "error_type": "TimeoutError",
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_1d2634eff18e4ac589c1af7b542c1f8d",
+        "artifact_ccca19838f97402eb8f7b12173b1c699"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_8fbe0f3e2f824f74b38858c1873c5bde"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": false,
+      "timestamp": "2026-06-02T05:29:21.039280+00:00",
+      "tool_call_id": "tool_call_d0eb5a582ae44c008e0a6a1e2118f74f",
+      "tool_name": "evaluate_candidate"
+    },
+    {
+      "agent_role": "reviewer",
+      "arguments_summary": {
+        "request_sha256": "78687097ba9e156f9e2e44a83711ffa6c020df09e9e5574ed188d36709c89758"
+      },
+      "duration_ms": 610.972334005055,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_51096b7ca6414a68a0650a1bc00a602d"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_c5f61f9719944c618b75f56e3e2e35b9"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:29:21.654209+00:00",
+      "tool_call_id": "tool_call_c67fcfed9c544922957145d5a64d116e",
+      "tool_name": "review_candidate"
+    },
+    {
+      "agent_role": "evaluator",
+      "arguments_summary": {
+        "request_sha256": "2dc1f7ef34a7087ac5f78d64cce529609c9b848ee0b025f8d9e4c81cf5fcbf87"
+      },
+      "duration_ms": 1407.2044160129735,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_51096b7ca6414a68a0650a1bc00a602d",
+        "artifact_8e0281b9a89a4914b4c0eada5fdedf5f"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_34466301b54c4b6d8cb73163370a337a"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:29:23.064434+00:00",
+      "tool_call_id": "tool_call_2e13c86e0c3b42448a9442a7a6b2d361",
+      "tool_name": "evaluate_candidate"
+    },
+    {
+      "agent_role": "reviewer",
+      "arguments_summary": {
+        "request_sha256": "bb70ec2d3b7f5e8beeb185edea63b5ccf68547ecf42760d4ecf437f1ffd5b17f"
+      },
+      "duration_ms": 768.9281670027412,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_09fc8042ce8f4c2ab73fe086e0faf108"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_399d358cce944e11b6fb764b0123bad7"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:29:23.834470+00:00",
+      "tool_call_id": "tool_call_525c512ce47f4583b6c9e2706ca4018d",
+      "tool_name": "review_candidate"
+    },
+    {
+      "agent_role": "evaluator",
+      "arguments_summary": {
+        "request_sha256": "9396563303b4633cfc50492c2cb9d9f4831d7111d7ded0b2b0c15adb67d9280e"
+      },
+      "duration_ms": 3650.0060000107624,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_09fc8042ce8f4c2ab73fe086e0faf108",
+        "artifact_ee01e670f6e546fd946bfa7474e82827"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_a6fae99f24ae45afbe9710cab86e1f42"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:29:27.485541+00:00",
+      "tool_call_id": "tool_call_4a3aed91ad944fdc8c204f0e16e58bb6",
+      "tool_name": "evaluate_candidate"
+    },
+    {
+      "agent_role": "reviewer",
+      "arguments_summary": {
+        "request_sha256": "b9bea01ac0bef0ad675bf197457d9946d6f3a3badfbe71c45d0d2234378ddf16"
+      },
+      "duration_ms": 547.7525839960435,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_ca4d25c05e0a4b7bb55719b9c1690976"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_86c1b46f2fb54075a3c8d88cc9cfa273"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:29:28.034429+00:00",
+      "tool_call_id": "tool_call_e2ae17f2d92948e6a67e43ee40a32837",
+      "tool_name": "review_candidate"
+    },
+    {
+      "agent_role": "evaluator",
+      "arguments_summary": {
+        "request_sha256": "9e08ed064985eefce284b2f2e06624633091b040e720203d74ec626958f0040f"
+      },
+      "duration_ms": 2456.7570830113254,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_ca4d25c05e0a4b7bb55719b9c1690976",
+        "artifact_750dfa159058475eb244888be455ec86"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_8e0439b0b0af4377a5cbc92e76df3d13"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:29:30.492259+00:00",
+      "tool_call_id": "tool_call_95832d14b74448c08dc1753e36ab482f",
+      "tool_name": "evaluate_candidate"
+    },
+    {
+      "agent_role": "reviewer",
+      "arguments_summary": {
+        "request_sha256": "ca80e9f1bcbb7317e2e6808a67d0c936643b78e40b9846a3e3b86ac37e448404"
+      },
+      "duration_ms": 544.4365419971291,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_655ff500dd2843f9aa00010a618e5ae8"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_763d6064dc0842df945aebee64b5296f"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:29:31.037823+00:00",
+      "tool_call_id": "tool_call_d29f42141dd5426b834e74f5595165ef",
+      "tool_name": "review_candidate"
+    },
+    {
+      "agent_role": "evaluator",
+      "arguments_summary": {
+        "request_sha256": "85e4b094abe457d8717b3ce300558c455d71aa18a314b7e5bf3b46f307eb0837"
+      },
+      "duration_ms": 21669.19187500025,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_655ff500dd2843f9aa00010a618e5ae8",
+        "artifact_d53911fd45ae4c2ba32914540bd90ebe"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_6e9c3b4251284170b17aac34e0d05eb0"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:29:52.708130+00:00",
+      "tool_call_id": "tool_call_6dcc4430c48844dfa1fb38586234ceb2",
+      "tool_name": "evaluate_candidate"
+    },
+    {
+      "agent_role": "reviewer",
+      "arguments_summary": {
+        "request_sha256": "6b8776e3683b428bc3ec30f6d56374a1cd4170ae1bb097d2bbee056afcd3c104"
+      },
+      "duration_ms": 1719.3270419957116,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_558c324a30ee4c8aaa10798b42752b27"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_fb20e72b8c9e4349ba044fe689a60784"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:29:54.429072+00:00",
+      "tool_call_id": "tool_call_7e0c3c5b76444d3fb56885433da6b894",
+      "tool_name": "review_candidate"
+    },
+    {
+      "agent_role": "evaluator",
+      "arguments_summary": {
+        "request_sha256": "3b6935fe026f751dc6e9686b1c94f3f55e25b4013f33bab2d20ef4ad8fbde22c"
+      },
+      "duration_ms": 30064.449457990122,
+      "error_message": "candidate timed out after 30s",
+      "error_type": "TimeoutError",
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_558c324a30ee4c8aaa10798b42752b27",
+        "artifact_664c7c9f164142de94624b6eb4195009"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_a6bf0e0f035d4be7981af70da609e98c"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": false,
+      "timestamp": "2026-06-02T05:30:24.495064+00:00",
+      "tool_call_id": "tool_call_1cbcea45b4644471b9ff9a6613495a5f",
+      "tool_name": "evaluate_candidate"
+    },
+    {
+      "agent_role": "reviewer",
+      "arguments_summary": {
+        "request_sha256": "c5adb3feb2ba7cfb97d3ab9d4453c91d292c559e50337004f76e7c8acd99622c"
+      },
+      "duration_ms": 678.7238329998218,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_4ad1be816f5b43b1afc28ffeda8a301e"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_31eaf57a775d42a4a73b919fc652835c"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:30:25.180024+00:00",
+      "tool_call_id": "tool_call_da1f0ea242d94ba2b1e26041cbcc5933",
+      "tool_name": "review_candidate"
+    },
+    {
+      "agent_role": "evaluator",
+      "arguments_summary": {
+        "request_sha256": "0d801cde6757616f2359ea2e0a3ea690a504946816fac2b6065c33e009072af6"
+      },
+      "duration_ms": 1540.914083001553,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_4ad1be816f5b43b1afc28ffeda8a301e",
+        "artifact_7337d63be29141db80edb0d0ecf0de54"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_aedd89cffdb74cb7b1654f710c1ade0f"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:30:26.722352+00:00",
+      "tool_call_id": "tool_call_15bd36ce827a40edaf827742d7da320d",
+      "tool_name": "evaluate_candidate"
+    },
+    {
+      "agent_role": "reviewer",
+      "arguments_summary": {
+        "request_sha256": "fbbdbaf6b75100b3ae88013a974b82cae3b47625f53d9f12ab2ca880db1b8db6"
+      },
+      "duration_ms": 782.8555840096669,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_97284c5c6ab641ffa938e9f6669d980e"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_e00dd03c6186437dae10ac60fe44160d"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:30:27.506882+00:00",
+      "tool_call_id": "tool_call_bffbb2d7f082476599502b071d49e72a",
+      "tool_name": "review_candidate"
+    },
+    {
+      "agent_role": "evaluator",
+      "arguments_summary": {
+        "request_sha256": "a837e9caf8eadf3e71678948b0905f71c372fc7dbe2a720239d8cc764f1327a2"
+      },
+      "duration_ms": 30052.36920900643,
+      "error_message": "candidate timed out after 30s",
+      "error_type": "TimeoutError",
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_97284c5c6ab641ffa938e9f6669d980e",
+        "artifact_64670f345d52482096d9886b1cba513e"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_fc0d7f5ed95f4e4ea9075b51e541b57f"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": false,
+      "timestamp": "2026-06-02T05:30:57.560681+00:00",
+      "tool_call_id": "tool_call_4f39b8212e6f491fb2956af24985acc3",
+      "tool_name": "evaluate_candidate"
+    },
+    {
+      "agent_role": "reviewer",
+      "arguments_summary": {
+        "request_sha256": "76aa43ad34ec389f0a561bb92437d20cdb74798da4101ef138d8cb47d1d019c2"
+      },
+      "duration_ms": 666.364375007106,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_583110fa996f4a1b90b7920794c43659"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_1371cbabbbfd404282906594608dff3c"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:30:58.230928+00:00",
+      "tool_call_id": "tool_call_b413db0c1bdc4e97adbf02f3fa3833fa",
+      "tool_name": "review_candidate"
+    },
+    {
+      "agent_role": "evaluator",
+      "arguments_summary": {
+        "request_sha256": "0e883f3842543cc01c47c13650c801da88288848429b343ad822f412dbd737e1"
+      },
+      "duration_ms": 1485.5595830013044,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_583110fa996f4a1b90b7920794c43659",
+        "artifact_a3e0440291d34d96a58cda6922169046"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_8e7ff078bd974288aef5d127b2f1ae92"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:30:59.718122+00:00",
+      "tool_call_id": "tool_call_8c35d4c9a7b04eebbe47917508d01b59",
+      "tool_name": "evaluate_candidate"
+    },
+    {
+      "agent_role": "dataset_profiler",
+      "arguments_summary": {
+        "request_sha256": "39381cf138c41ecaa2b137bd37559358df075216adc54e30e55bcd1e760a8536"
+      },
+      "duration_ms": 43.62599999876693,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_d7ec1b12466546de8b4f12023e8d2718"
+      ],
+      "iteration": null,
+      "output_artifact_ids": [
+        "artifact_140f2cd9260c405fa7f86ab14c38cccc"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:44:57.149212+00:00",
+      "tool_call_id": "tool_call_94997b10c5064a1d8a39dac497da37e2",
+      "tool_name": "profile_dataset"
+    },
+    {
+      "agent_role": "feature_engineer",
+      "arguments_summary": {
+        "request_sha256": "5d5fecb8a889f9f4593bc72393374e218f786235cc5a9ec3a5555dada51109da"
+      },
+      "duration_ms": 1131.6320420010015,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_d7ec1b12466546de8b4f12023e8d2718",
+        "artifact_b8d52d98d6f14015b990c379ae89a07d",
+        "artifact_140f2cd9260c405fa7f86ab14c38cccc"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_50675ae63e6f4d268ff9212d3d79da0e"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:44:58.282169+00:00",
+      "tool_call_id": "tool_call_0d17accb985948f9897b9aa1aa637dbb",
+      "tool_name": "build_battery_features"
+    },
+    {
+      "agent_role": "reviewer",
+      "arguments_summary": {
+        "request_sha256": "2f38855ae32b946666fdc26448f1676bf7838c39df76e09875909fdcfadec32a"
+      },
+      "duration_ms": 1533.8964580005268,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_3a42ac7211954e04b420fb912ee9228d"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_d87d3104f4be48a9b2bee8d3ab6d23d2"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:44:59.849703+00:00",
+      "tool_call_id": "tool_call_46116cd6bb684dcfb9ef3d20d203a5ef",
+      "tool_name": "review_candidate"
+    },
+    {
+      "agent_role": "evaluator",
+      "arguments_summary": {
+        "request_sha256": "7a88b10e0c61db7338cc6ef435a8a38d54d62f61c58dfcca4bd82fd954c586c2"
+      },
+      "duration_ms": 1852.6416669919854,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_3a42ac7211954e04b420fb912ee9228d",
+        "artifact_b8222b17f5e344669969f15a72c58432"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_789ff81725754c6b8c73070ceae84831"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:45:01.705156+00:00",
+      "tool_call_id": "tool_call_e7fbb17a352e46d8b1e980473bc54a0a",
+      "tool_name": "evaluate_candidate"
+    },
+    {
+      "agent_role": "reviewer",
+      "arguments_summary": {
+        "request_sha256": "5d6e5d537c8872f01351961f55cc056154d9247f821696fdd344ca418c04e1a0"
+      },
+      "duration_ms": 969.8652920051245,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_05e52c13ba114970a267def9c3459962"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_82dfeb67177f417a84923262c9caedbe"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:45:02.678940+00:00",
+      "tool_call_id": "tool_call_15daa21c91b9435f84432dab41054a52",
+      "tool_name": "review_candidate"
+    },
+    {
+      "agent_role": "evaluator",
+      "arguments_summary": {
+        "request_sha256": "47e6cbede3fde30ba5a8ba05bea33754b28db26d103227c992c8ddbd000778c1"
+      },
+      "duration_ms": 1612.9013750032755,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_05e52c13ba114970a267def9c3459962",
+        "artifact_c57c78edea074fcaa7a09c5ed8599f4b"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_1f1a448d5997496a89c68890bf2e391f"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:45:04.294404+00:00",
+      "tool_call_id": "tool_call_7a773c76c9b04cd4ba5c651930a9b65d",
+      "tool_name": "evaluate_candidate"
+    },
+    {
+      "agent_role": "reviewer",
+      "arguments_summary": {
+        "request_sha256": "9638c4e460abb66fc60480fdf1ec277e2d3498e01a91c628cf999ad5f2d43f10"
+      },
+      "duration_ms": 3583.236250007758,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_100d0cf5122d44ddae75d776083fd3f6"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_9b907443b0194e6ea639fd2a406b4ea5"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:45:07.880435+00:00",
+      "tool_call_id": "tool_call_802930472c3d493f95c0c74361f47149",
+      "tool_name": "review_candidate"
+    },
+    {
+      "agent_role": "evaluator",
+      "arguments_summary": {
+        "request_sha256": "77691b206bacdde4c0e87bff5518493f2b1729704c212dcd7010846abff568f6"
+      },
+      "duration_ms": 30142.122917008237,
+      "error_message": "candidate timed out after 30s",
+      "error_type": "TimeoutError",
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_100d0cf5122d44ddae75d776083fd3f6",
+        "artifact_4ffff2c3d14a450b8612e09602019e51"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_c9422ab9a7a74cd6acaf23ccfcd55009"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": false,
+      "timestamp": "2026-06-02T05:45:38.028068+00:00",
+      "tool_call_id": "tool_call_b8bf13baa6b84eae8e743957be4d09c1",
+      "tool_name": "evaluate_candidate"
+    },
+    {
+      "agent_role": "reviewer",
+      "arguments_summary": {
+        "request_sha256": "344edd873a4d445fcf5d3e1e0efe576e0193269ad2b8140ce7ceca1900b25d0a"
+      },
+      "duration_ms": 1133.0660829989938,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_6e69c0daa376410980be6aac4106f10f"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_dd4cc114504a4cd5a53ef14ae965e5d5"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:45:39.186147+00:00",
+      "tool_call_id": "tool_call_3759c22fffba40dfb11297288b7e9daa",
+      "tool_name": "review_candidate"
+    },
+    {
+      "agent_role": "evaluator",
+      "arguments_summary": {
+        "request_sha256": "d0230cb005a1e9982eda38ba77a8eb9b50c000e2c9bd3eaaae1a93f44b39bf2d"
+      },
+      "duration_ms": 2034.3098750017816,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_6e69c0daa376410980be6aac4106f10f",
+        "artifact_5f16f9edefdc4b72b35315b0ca9c6cbf"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_0af01e5cd9d2464fb83ccf7ce004a8c8"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:45:41.223709+00:00",
+      "tool_call_id": "tool_call_99415540580b4a18b20e14797114aeac",
+      "tool_name": "evaluate_candidate"
+    },
+    {
+      "agent_role": "reviewer",
+      "arguments_summary": {
+        "request_sha256": "c39ae4e3c0fc60862eb73f7393a4621a98ad7ac5d13078600b73b5668f2e1339"
+      },
+      "duration_ms": 1191.948792009498,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_ccb03779d2784ff2a124e03b52c1bc68"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_f61b12fa0b514b19847453387e8ebf3f"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:45:42.418549+00:00",
+      "tool_call_id": "tool_call_3a128854128e4df58f57880ba547b7e7",
+      "tool_name": "review_candidate"
+    },
+    {
+      "agent_role": "evaluator",
+      "arguments_summary": {
+        "request_sha256": "512060578cc0a9388598c6821d98151597b56f8a6f2a1ad498e44d2cecee5435"
+      },
+      "duration_ms": 6000.13079198834,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_ccb03779d2784ff2a124e03b52c1bc68",
+        "artifact_6236f902aa9e4b958a5163a6989e68a1"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_e9c56f175f554053ae86bddaba10d9e5"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:45:48.422029+00:00",
+      "tool_call_id": "tool_call_8925a857951d4940beed81053113f15a",
+      "tool_name": "evaluate_candidate"
+    },
+    {
+      "agent_role": "reviewer",
+      "arguments_summary": {
+        "request_sha256": "b25fdc17c9cb640cb26ef9025cc9b1f21d9850feb6efc7f2a9c83a0b7991dce9"
+      },
+      "duration_ms": 957.0250420074444,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_6d2fcd5c59ca44e985d446b9aab969d6"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_9fc2ef1b4e584a0bab9d0c6517910bb5"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:45:49.383585+00:00",
+      "tool_call_id": "tool_call_4535f08365ce4db79e22a18ebc0c5a68",
+      "tool_name": "review_candidate"
+    },
+    {
+      "agent_role": "evaluator",
+      "arguments_summary": {
+        "request_sha256": "a45dfa41bdf86a7464ee73ff6f448204df370b8a4f3e16dbf4c16d6eff37bdc9"
+      },
+      "duration_ms": 4365.362291995552,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_6d2fcd5c59ca44e985d446b9aab969d6",
+        "artifact_d406b184407e4a1f86bbaad874e1efce"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_1eeb3968618b41688bb53c80cbeea9a8"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:45:53.752378+00:00",
+      "tool_call_id": "tool_call_48880916c45a4583a7af1e47e05f0d55",
+      "tool_name": "evaluate_candidate"
+    },
+    {
+      "agent_role": "reviewer",
+      "arguments_summary": {
+        "request_sha256": "6e1ab77077cfafad5c32c50f346ce5d2bc6dbe55bfbb727dcec62d7eea1fe7f2"
+      },
+      "duration_ms": 890.4354999976931,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_1836f0d0b410485b9ebf06a2e13a032f"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_76e97a6aeca541fe99f836d06b142762"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:45:54.645704+00:00",
+      "tool_call_id": "tool_call_623d2067a4ab4feab0aa72b9ce591ca7",
+      "tool_name": "review_candidate"
+    },
+    {
+      "agent_role": "evaluator",
+      "arguments_summary": {
+        "request_sha256": "280c8e26262200744a396868c66f442e1fd8cda910989176e1bb5a4db6983ea0"
+      },
+      "duration_ms": 30088.703624991467,
+      "error_message": "candidate timed out after 30s",
+      "error_type": "TimeoutError",
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_1836f0d0b410485b9ebf06a2e13a032f",
+        "artifact_62715e93bc714c6c9e7e5c8cc46b73cb"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_91485600d6d440edab8f2dbcacd4684a"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": false,
+      "timestamp": "2026-06-02T05:46:24.738655+00:00",
+      "tool_call_id": "tool_call_18f8f7193e094b86aa47970c3f25775b",
+      "tool_name": "evaluate_candidate"
+    },
+    {
+      "agent_role": "reviewer",
+      "arguments_summary": {
+        "request_sha256": "b14c4e2785ccc170cee89446874d07013c2cf9c37cd6c700bcc907c9db7149cf"
+      },
+      "duration_ms": 948.8721669913502,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_51428e9f3a994e06bfb39fd93ec0ee11"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_bdefaa3b94574007821595e837bd4709"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:46:25.698933+00:00",
+      "tool_call_id": "tool_call_c4d3588f2d554d0290a5739547ab9611",
+      "tool_name": "review_candidate"
+    },
+    {
+      "agent_role": "evaluator",
+      "arguments_summary": {
+        "request_sha256": "8bcd44911e975733f66018448eee27b53e7c25f49615658b8b1387133f20229b"
+      },
+      "duration_ms": 1833.0911669909256,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_51428e9f3a994e06bfb39fd93ec0ee11",
+        "artifact_c7835f0af9d6462fbc05a39e45eb1a6b"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_f274454578d648ba8778cfb3db87e648"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:46:27.535719+00:00",
+      "tool_call_id": "tool_call_f635093671634c8c820de446f354b170",
+      "tool_name": "evaluate_candidate"
+    },
+    {
+      "agent_role": "reviewer",
+      "arguments_summary": {
+        "request_sha256": "18c5745b65a20c1f650bdfe68a625a2435b3856643b06d08e5037e2ab6162b39"
+      },
+      "duration_ms": 2317.925541996374,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_fc1d6eaab74b4f368b3417c0e3c77a0e"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_be13c8a3a1854cd7966e575a05f1cd57"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:46:29.856640+00:00",
+      "tool_call_id": "tool_call_20b1b066558043a49d2ad79618511a08",
+      "tool_name": "review_candidate"
+    },
+    {
+      "agent_role": "evaluator",
+      "arguments_summary": {
+        "request_sha256": "3a5cc0277bcd7b89a8215306cf446dcdfc527cbb89e322534867f57513a95b53"
+      },
+      "duration_ms": 30066.742166003678,
+      "error_message": "candidate timed out after 30s",
+      "error_type": "TimeoutError",
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_fc1d6eaab74b4f368b3417c0e3c77a0e",
+        "artifact_0ffe223bba5a42cd8d44a4e0a9755502"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_83fef32413134dbc80813188b8b52291"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": false,
+      "timestamp": "2026-06-02T05:46:59.926962+00:00",
+      "tool_call_id": "tool_call_d5b53fade0d94fbe9dfa56155e21cd3e",
+      "tool_name": "evaluate_candidate"
+    },
+    {
+      "agent_role": "reviewer",
+      "arguments_summary": {
+        "request_sha256": "ccf554f20ea813054f4c88b5c5e6424ed6d60f85f0e88f3dad5c0414d7509043"
+      },
+      "duration_ms": 912.3819999949774,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_0f2ff6ca4c7840dd888b121bc183dfbd"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_651a40edff7f436382be19ef1e542de9"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:47:00.847920+00:00",
+      "tool_call_id": "tool_call_f2d8de280a414e95a788fd61f6dcc2e1",
+      "tool_name": "review_candidate"
+    },
+    {
+      "agent_role": "evaluator",
+      "arguments_summary": {
+        "request_sha256": "d7b01949d044c89a996e78ea6af3766cd92ff7b244b5a363ae68fdf2707c1bed"
+      },
+      "duration_ms": 1756.8150000006426,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_0f2ff6ca4c7840dd888b121bc183dfbd",
+        "artifact_0b3af88f850a437c9b2ef28bb4b83ae9"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_d2ca91e019d74ea6b3428121064f8340"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:47:02.607735+00:00",
+      "tool_call_id": "tool_call_075516e28635459bb20cd0205e88367e",
+      "tool_name": "evaluate_candidate"
+    },
+    {
+      "agent_role": "reviewer",
+      "arguments_summary": {
+        "request_sha256": "eda770f9da82505132826677c78d2f4609bceb92b7d042b72dac10f77e429883"
+      },
+      "duration_ms": 1040.966666987515,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_2af2b56e4daa413e85ef9c7b123555ab"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_907771dfefc141ad8e4ee424fcebf313"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:47:03.651767+00:00",
+      "tool_call_id": "tool_call_e3007705a400400bba15f2a7ecab462b",
+      "tool_name": "review_candidate"
+    },
+    {
+      "agent_role": "evaluator",
+      "arguments_summary": {
+        "request_sha256": "972430b00d6bf0b49fbd65604089a7e095b96795e9a0b970afe33c35f47c18e4"
+      },
+      "duration_ms": 30085.487541000475,
+      "error_message": "candidate timed out after 30s",
+      "error_type": "TimeoutError",
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_2af2b56e4daa413e85ef9c7b123555ab",
+        "artifact_4908798fd9364d2981698687a7c2f3b9"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_d1cf386944534c0ab6735ed38202c81d"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": false,
+      "timestamp": "2026-06-02T05:47:33.741258+00:00",
+      "tool_call_id": "tool_call_38960ffaece54a1bb6d3547fbcb04eeb",
+      "tool_name": "evaluate_candidate"
+    },
+    {
+      "agent_role": "reviewer",
+      "arguments_summary": {
+        "request_sha256": "7a9a9f4ac5e21b31361dcc650acf54bdf296dab53601ed7f4119207ca9909f7b"
+      },
+      "duration_ms": 1414.3803750048392,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_ebf47ceea66948b5b47b4893e2f9511c"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_6443e992af4f4cc8a66ad8f48dabf82c"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:47:35.167604+00:00",
+      "tool_call_id": "tool_call_7dd59a30bc2c41ea92eec91bff37e505",
+      "tool_name": "review_candidate"
+    },
+    {
+      "agent_role": "evaluator",
+      "arguments_summary": {
+        "request_sha256": "0ce518836baf01a629200cdd3732b8fe4c98a0c38c8f564a5ff86d0e13d54482"
+      },
+      "duration_ms": 1851.6129579948029,
+      "error_message": null,
+      "error_type": null,
+      "event_type": "tool_call",
+      "input_artifact_ids": [
+        "artifact_ebf47ceea66948b5b47b4893e2f9511c",
+        "artifact_8b8780de92c64d18932102c61f18db99"
+      ],
+      "iteration": 0,
+      "output_artifact_ids": [
+        "artifact_b1712a62fb2b4d279bfe9e0b534e2a4d"
+      ],
+      "run_id": "feature_program_smoke",
+      "success": true,
+      "timestamp": "2026-06-02T05:47:37.023116+00:00",
+      "tool_call_id": "tool_call_6e72d22d99e34720b2677bb1242431ba",
       "tool_name": "evaluate_candidate"
     }
   ],
   "validation_fraction": 0.25,
   "validation_metrics": {
     "agent_id": "evaluator",
-    "artifact_id": "artifact_7e119a14d6464862b57b71e565b97fb2",
+    "artifact_id": "artifact_69c4c3670f0a4b2d9db99cdcb2c216a5",
     "artifact_type": "EvaluationReport",
-    "candidate_id": "role_graph_iter_000",
-    "candidate_name": "role_graph_iter_000",
-    "candidate_path": "runs/open_battery_agents/v2_role_graph_smoke/candidates/role_graph_iter_000.py",
-    "created_at": "2026-06-01T21:34:08.746617Z",
-    "extra_metrics": {},
+    "candidate_id": "role_graph_iter_000_variant_03",
+    "candidate_name": "role_graph_iter_000_variant_03",
+    "candidate_path": "runs/open_battery_agents/feature_program_smoke/candidates/role_graph_iter_000_variant_03.py",
+    "created_at": "2026-06-02T05:45:48.422543Z",
+    "extra_metrics": {
+      "n_negative_predictions": 0,
+      "n_nonfinite_predictions": 0,
+      "n_predictions": 45,
+      "residual_mean": -53.00959089295623,
+      "residual_std": 141.86384806075932,
+      "y_pred_max": 974.8278727136685,
+      "y_pred_mean": 806.9416530483612,
+      "y_pred_min": 641.0032144203494,
+      "y_true_max": 1234.855720545823,
+      "y_true_mean": 859.9512439413174,
+      "y_true_min": 558.6822900380835
+    },
     "failure_reason": null,
     "human_readable_summary": "Evaluator completed with success=True.",
     "iteration": 0,
-    "kendall": 0.1515151515151515,
+    "kendall": 0.4969696969696969,
     "locked_batch9_validation_run": false,
-    "mae": 151.16576478995836,
+    "mae": 124.86844598578304,
     "parent_artifact_ids": [
-      "artifact_8a56077dbbf24de08363c0aa7a532439",
-      "artifact_50d5f64d6b664c29a8a2e1eafb64758c",
-      "artifact_5a0d0c86b78a42af85b1d4d31ddf9933"
+      "artifact_ccb03779d2784ff2a124e03b52c1bc68",
+      "artifact_6236f902aa9e4b958a5163a6989e68a1",
+      "artifact_e9c56f175f554053ae86bddaba10d9e5"
     ],
     "pgr": null,
-    "r2": 0.020527598105133382,
-    "rmse": 176.03634523076144,
-    "run_id": "v2_role_graph_smoke",
+    "prediction_path": "runs/open_battery_agents/feature_program_smoke/artifacts/iteration_000/predictions_role_graph_iter_000_variant_03.csv",
+    "r2": 0.2750747420603723,
+    "rmse": 151.44427395330862,
+    "run_id": "feature_program_smoke",
     "schema_version": "open_battery_agents_artifacts.v1",
-    "spearman": 0.2191040843214756,
+    "spearman": 0.6523056653491436,
     "split_mode": "random",
     "stderr_excerpt": null,
     "stdout_excerpt": null,

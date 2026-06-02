@@ -17,6 +17,8 @@ from .schemas import (
     EvaluationReport,
     ExperimentState,
     FeaturePlan,
+    FeatureProgram,
+    FeatureProgramResult,
     ModelPlan,
     ReviewReport,
     RunManifest,
@@ -65,6 +67,10 @@ def artifact_default_relative_path(artifact: ArtifactModel) -> Path:
         return folder / f"feature_plan_{agent_id}.json"
     if isinstance(artifact, ModelPlan):
         return folder / f"model_plan_{agent_id}.json"
+    if isinstance(artifact, FeatureProgram):
+        return folder / f"feature_program_{_sanitize(artifact.program_id)}.json"
+    if isinstance(artifact, FeatureProgramResult):
+        return folder / f"feature_program_result_{_sanitize(artifact.program_id)}.json"
     if isinstance(artifact, CandidateSpec):
         if "variant_" in candidate_name:
             suffix = candidate_name

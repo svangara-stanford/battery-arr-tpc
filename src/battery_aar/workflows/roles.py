@@ -163,6 +163,11 @@ class RoleContext:
     tool_client: NativeToolClient | HTTPToolClient
     allow_freeform_code: bool = False
     candidates_per_iteration: int = 1
+    feature_program_paths: list[str] | None = None
+    feature_program_mode: str = "none"
+    include_feature_programs: bool = False
+    feature_family_filter: list[str] | None = None
+    feature_program_recipe: str | None = None
 
 
 class DatasetProfiler:
@@ -194,6 +199,11 @@ class FeatureScientist:
             max_cycle=ctx.max_cycle,
             include_protocol=ctx.allow_protocol_features,
             return_feature_metadata=True,
+            feature_program_paths=ctx.feature_program_paths or [],
+            feature_program_mode=ctx.feature_program_mode,
+            include_feature_programs=ctx.include_feature_programs,
+            feature_family_filter=ctx.feature_family_filter or [],
+            feature_program_recipe=ctx.feature_program_recipe,
             iteration=iteration,
             agent_role=AgentRole.FEATURE_ENGINEER.value,
             input_artifact_ids=parent_ids,
@@ -224,6 +234,9 @@ class FeatureScientist:
                 ],
                 selected_columns=feature_response.feature_columns,
                 include_protocol_features=ctx.allow_protocol_features,
+                feature_program_paths=list(ctx.feature_program_paths or []),
+                feature_program_recipe=ctx.feature_program_recipe,
+                feature_set="all_available",
                 max_cycle=ctx.max_cycle,
                 rationale="Offline deterministic plan uses the battery feature toolbox without author coefficients.",
                 constraints=["row_id and cell_id are join keys only", "batch 9 is not used during surrogate search"],
@@ -244,6 +257,10 @@ class FeatureScientist:
                 feature_families=list(map(str, payload.get("feature_families", []))),
                 selected_columns=list(map(str, payload.get("selected_columns", []))),
                 include_protocol_features=bool(payload.get("include_protocol_features", ctx.allow_protocol_features)),
+                feature_program_ids=list(map(str, payload.get("feature_program_ids", []))),
+                feature_program_paths=list(ctx.feature_program_paths or []),
+                feature_program_recipe=payload.get("feature_program_recipe") or ctx.feature_program_recipe,
+                feature_set=str(payload.get("feature_set") or "all_available"),
                 max_cycle=int(payload.get("max_cycle") or ctx.max_cycle),
                 rationale=payload.get("rationale"),
                 constraints=list(map(str, payload.get("constraints", []))),
@@ -275,6 +292,7 @@ class ModelArchitect:
                 model_family="linear_regularized",
                 estimator_name="Ridge",
                 target_transform="raw",
+                feature_set="all_available",
                 hyperparameters={"alpha": 1.0},
                 preprocessing_steps=["drop_all_nan_columns", "SimpleImputer(strategy='median')", "StandardScaler"],
                 rationale="Small surrogate datasets need a stable regularized baseline before more flexible models.",
@@ -295,6 +313,7 @@ class ModelArchitect:
                 model_family=str(payload.get("model_family") or "regularized_regression"),
                 estimator_name=payload.get("estimator_name"),
                 target_transform=str(payload.get("target_transform") or "raw"),
+                feature_set=str(payload.get("feature_set") or "all_available"),
                 hyperparameters=payload.get("hyperparameters") if isinstance(payload.get("hyperparameters"), dict) else {},
                 preprocessing_steps=list(map(str, payload.get("preprocessing_steps", []))),
                 rationale=payload.get("rationale"),
@@ -349,6 +368,11 @@ class CodeGenerator:
             include_protocol_features=bool(feature_plan.include_protocol_features),
             model_family=model_plan.estimator_name or model_plan.model_family,
             target_transform=model_plan.target_transform,
+            feature_set=model_plan.feature_set,
+            feature_program_paths=list(feature_plan.feature_program_paths),
+            feature_program_mode="table" if feature_plan.feature_program_paths else "none",
+            include_feature_programs=bool(feature_plan.feature_program_paths),
+            feature_family_filter=list(ctx.feature_family_filter or []),
             preprocessing=list(model_plan.preprocessing_steps),
             hyperparameters=dict(model_plan.hyperparameters),
         )
@@ -399,37 +423,42 @@ class CodeGenerator:
             return [(f"role_graph_iter_{iteration:03d}", feature_plan, model_plan)]
         model_families = ["Ridge", "ElasticNetCV", "LassoCV", "RandomForestRegressor", "GradientBoostingRegressor"]
         target_transforms = ["raw", "log10"]
+        feature_sets = ["all_available"]
+        if ctx.include_feature_programs and ctx.feature_program_paths:
+            feature_sets = ["scalar_only", "curve_only", "scalar_plus_curve", "broad_physics", "all_available"]
         include_protocol_options = [bool(feature_plan.include_protocol_features)]
         if ctx.allow_protocol_features:
             include_protocol_options = [True, False]
-        preferred_keys: list[tuple[str, str, bool]] = [
-            ("Ridge", str(model_plan.target_transform or "raw"), bool(feature_plan.include_protocol_features)),
-            ("Ridge", "log10", bool(feature_plan.include_protocol_features)),
-            ("ElasticNetCV", "raw", bool(feature_plan.include_protocol_features)),
-            ("RandomForestRegressor", "raw", False if ctx.allow_protocol_features else bool(feature_plan.include_protocol_features)),
-            ("GradientBoostingRegressor", "log10", bool(feature_plan.include_protocol_features)),
-            ("LassoCV", "log10", False if ctx.allow_protocol_features else bool(feature_plan.include_protocol_features)),
+        preferred_keys: list[tuple[str, str, bool, str]] = [
+            ("Ridge", str(model_plan.target_transform or "raw"), bool(feature_plan.include_protocol_features), feature_sets[0]),
+            ("Ridge", "log10", bool(feature_plan.include_protocol_features), feature_sets[min(1, len(feature_sets) - 1)]),
+            ("ElasticNetCV", "raw", bool(feature_plan.include_protocol_features), feature_sets[min(2, len(feature_sets) - 1)]),
+            ("RandomForestRegressor", "raw", False if ctx.allow_protocol_features else bool(feature_plan.include_protocol_features), feature_sets[min(3, len(feature_sets) - 1)]),
+            ("GradientBoostingRegressor", "log10", bool(feature_plan.include_protocol_features), feature_sets[min(4, len(feature_sets) - 1)]),
+            ("LassoCV", "log10", False if ctx.allow_protocol_features else bool(feature_plan.include_protocol_features), feature_sets[-1]),
         ]
         all_keys = preferred_keys + [
-            (model_family, target_transform, include_protocol)
+            (model_family, target_transform, include_protocol, feature_set)
+            for feature_set in feature_sets
             for target_transform in target_transforms
             for include_protocol in include_protocol_options
             for model_family in model_families
         ]
         variants: list[tuple[str, FeaturePlan, ModelPlan]] = []
-        seen: set[tuple[str, str, bool]] = set()
-        for model_family, target_transform, include_protocol in all_keys:
-            key = (model_family, target_transform, include_protocol)
+        seen: set[tuple[str, str, bool, str]] = set()
+        for model_family, target_transform, include_protocol, feature_set in all_keys:
+            key = (model_family, target_transform, include_protocol, feature_set)
             if key in seen:
                 continue
             seen.add(key)
             candidate_id = f"role_graph_iter_{iteration:03d}_variant_{len(variants):02d}"
-            variant_feature_plan = feature_plan.model_copy(update={"include_protocol_features": include_protocol})
+            variant_feature_plan = feature_plan.model_copy(update={"include_protocol_features": include_protocol, "feature_set": feature_set})
             variant_model_plan = model_plan.model_copy(
                 update={
                     "model_family": model_family,
                     "estimator_name": model_family,
                     "target_transform": target_transform,
+                    "feature_set": feature_set,
                 }
             )
             variants.append((candidate_id, variant_feature_plan, variant_model_plan))
@@ -547,6 +576,10 @@ class Evaluator:
             split_mode=ctx.split_mode,
             max_cycle=ctx.max_cycle,
             allow_protocol_features=ctx.allow_protocol_features,
+            feature_program_paths=ctx.feature_program_paths or [],
+            feature_program_mode=ctx.feature_program_mode,
+            include_feature_programs=ctx.include_feature_programs,
+            feature_family_filter=ctx.feature_family_filter or [],
             iteration=iteration,
             agent_role=AgentRole.EVALUATOR.value,
             input_artifact_ids=[candidate.artifact_id, review.artifact_id],

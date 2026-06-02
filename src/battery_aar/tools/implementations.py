@@ -16,6 +16,8 @@ from battery_aar.agents.candidate_api import load_candidate
 from battery_aar.agents.evaluator import evaluate_candidate_train_test, regression_metrics
 from battery_aar.agents.sandbox import validate_code_safety
 from battery_aar.features.battery_lifetime_features import build_all_battery_features
+from battery_aar.features.operator_registry import default_operator_registry
+from battery_aar.features.program_library import available_program_recipes
 from battery_aar.workflows.artifacts import ArtifactStore, build_dataset_profile_artifact
 from battery_aar.workflows.schemas import AgentRole, CritiqueReport, EvaluationReport, FeaturePlan, ReviewReport
 from battery_aar.workflows.trace import TraceLogger
@@ -29,6 +31,7 @@ from .schemas import (
     CandidateReviewResponse,
     DatasetProfileRequest,
     DatasetProfileResponse,
+    FeatureProgramsResponse,
     RunCompareRequest,
     RunCompareResponse,
     ToolDescriptor,
@@ -41,6 +44,7 @@ ResponseT = TypeVar("ResponseT")
 TOOL_DESCRIPTORS = [
     ToolDescriptor(name="profile_dataset", endpoint="/dataset/profile", description="Profile metadata, cycle summaries, labels, batches, protocols, and missingness."),
     ToolDescriptor(name="build_battery_features", endpoint="/features/build", description="Build author-inspired battery lifetime feature tables."),
+    ToolDescriptor(name="list_feature_programs", endpoint="/features/programs", description="List trusted feature-program recipes and operators."),
     ToolDescriptor(name="review_candidate", endpoint="/candidate/review", description="Statically review candidate code for safety and leakage risks."),
     ToolDescriptor(name="evaluate_candidate", endpoint="/candidate/evaluate", description="Evaluate a candidate against a train/validation split using the existing evaluator."),
     ToolDescriptor(name="compare_runs", endpoint="/runs/compare", description="Compare Open Battery Agents run summaries."),
@@ -199,9 +203,22 @@ def build_battery_features(request: BuildFeaturesRequest) -> BuildFeaturesRespon
                 max_cycle=request.max_cycle,
                 include_protocol=request.include_protocol,
                 return_feature_metadata=True,
+                feature_program_paths=request.feature_program_paths,
+                feature_program_mode=request.feature_program_mode,
+                include_feature_programs=request.include_feature_programs,
+                feature_family_filter=request.feature_family_filter,
             )
         else:
-            features = build_all_battery_features(metadata, cycles, max_cycle=request.max_cycle, include_protocol=request.include_protocol)
+            features = build_all_battery_features(
+                metadata,
+                cycles,
+                max_cycle=request.max_cycle,
+                include_protocol=request.include_protocol,
+                feature_program_paths=request.feature_program_paths,
+                feature_program_mode=request.feature_program_mode,
+                include_feature_programs=request.include_feature_programs,
+                feature_family_filter=request.feature_family_filter,
+            )
             feature_meta = pd.DataFrame()
         output_path = Path(request.output_path) if request.output_path else store.artifact_dir / "tool_outputs" / "battery_features.csv"
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -224,15 +241,70 @@ def build_battery_features(request: BuildFeaturesRequest) -> BuildFeaturesRespon
         output_paths = {"features": str(output_path), "feature_plan": str(artifact_path)}
         if feature_meta_path.exists():
             output_paths["feature_metadata"] = str(feature_meta_path)
+        family_col = "feature_family" if "feature_family" in feature_meta.columns else "family" if "family" in feature_meta.columns else None
+        family_counts = {str(k): int(v) for k, v in feature_meta[family_col].value_counts().to_dict().items()} if family_col else {}
+        feature_program_columns = 0
+        if not feature_meta.empty and "source_feature_program_table" in feature_meta.columns:
+            feature_program_columns = int(feature_meta["source_feature_program_table"].notna().sum())
+        matched_rows = int(len(features))
+        missing_rows = 0
+        if request.feature_program_paths:
+            key = "row_id" if "row_id" in metadata.columns else "cell_id" if "cell_id" in metadata.columns else None
+            if key:
+                expected = set(metadata[key].dropna().astype(str))
+                seen = set(map(str, features.index.dropna().tolist()))
+                missing_rows = int(len(expected - seen))
         return {
             "output_artifact_ids": [artifact.artifact_id],
             "output_paths": output_paths,
             "n_rows": int(features.shape[0]),
             "n_features": int(features.shape[1]),
             "feature_columns": list(map(str, features.columns)),
+            "feature_programs_used": list(request.feature_program_paths),
+            "n_feature_program_columns": feature_program_columns,
+            "feature_family_counts": family_counts,
+            "n_matched_rows": matched_rows,
+            "n_missing_rows": missing_rows,
+            "true_raw_curve_features_used": bool(feature_meta.get("is_true_curve_feature", pd.Series(dtype=bool)).fillna(False).astype(bool).any()),
+            "proxy_features_used": bool(feature_meta.get("is_proxy_feature", pd.Series(dtype=bool)).fillna(False).astype(bool).any()),
+            "protocol_features_used": bool(feature_meta.get("uses_protocol", pd.Series(dtype=bool)).fillna(False).astype(bool).any()),
         }
 
     return _handle_tool(request, "build_battery_features", BuildFeaturesResponse, run)
+
+
+def list_feature_programs(
+    run_id: str = "server",
+    tool_call_id: str = "feature_programs",
+    run_dir: str | None = None,
+    iteration: int | None = None,
+    agent_role: str | None = None,
+    input_artifact_ids: list[str] | None = None,
+) -> FeatureProgramsResponse:
+    started = time.perf_counter()
+    response = FeatureProgramsResponse(
+        tool_name="list_feature_programs",
+        tool_call_id=tool_call_id,
+        run_id=run_id,
+        success=True,
+        recipes=available_program_recipes(),
+        operators=default_operator_registry().available_operators(),
+        duration_ms=0.0,
+    )
+    response.duration_ms = (time.perf_counter() - started) * 1000
+    _store, trace = _trace_and_store(run_id, run_dir)
+    trace.log_tool_call(
+        tool_name="list_feature_programs",
+        tool_call_id=tool_call_id,
+        iteration=iteration,
+        agent_role=agent_role,
+        input_artifact_ids=input_artifact_ids or [],
+        output_artifact_ids=[],
+        duration_ms=response.duration_ms,
+        success=True,
+        arguments_summary={"request_sha256": hashlib.sha256(f"{run_id}:{tool_call_id}".encode("utf-8")).hexdigest()},
+    )
+    return response
 
 
 def _mock_candidate_tables() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, Any]]:
@@ -356,6 +428,9 @@ def _identifier_token_is_allowed_context(line: str, token: str) -> bool:
 def _identifier_feature_issues(code: str) -> list[str]:
     issues: list[str] = []
     in_identifier_block = False
+    def contains_token(line: str, token: str) -> bool:
+        return re.search(rf"(?<![A-Za-z0-9_]){re.escape(token)}(?![A-Za-z0-9_])", line) is not None
+
     for line_no, line in enumerate(code.splitlines(), start=1):
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
@@ -370,7 +445,7 @@ def _identifier_feature_issues(code: str) -> list[str]:
                 in_identifier_block = True
             continue
         for token in IDENTIFIER_REVIEW_TOKENS:
-            if token not in lowered:
+            if not contains_token(lowered, token):
                 continue
             if _identifier_token_is_allowed_context(stripped, token):
                 continue
@@ -567,6 +642,10 @@ def evaluate_candidate(request: CandidateEvaluateRequest) -> CandidateEvaluateRe
             max_cycle=request.max_cycle,
             timeout_s=request.timeout_s,
             return_predictions=True,
+            feature_program_paths=request.feature_program_paths,
+            feature_program_mode=request.feature_program_mode,
+            include_feature_programs=request.include_feature_programs,
+            feature_family_filter=request.feature_family_filter,
         )
         metrics = result.get("metrics") or {}
         candidate_id = Path(request.candidate_path).stem

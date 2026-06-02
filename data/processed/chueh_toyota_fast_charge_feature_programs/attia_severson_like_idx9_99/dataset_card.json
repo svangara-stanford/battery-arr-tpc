@@ -1,0 +1,19 @@
+{
+  "cells_featurized": 179,
+  "cells_requested": 179,
+  "cycle_index_convention": "raw_zero_based",
+  "description": "Literature-inspired capacity and discharge curve-delta terms using generic trusted operators.",
+  "exclusions_count": 0,
+  "feature_family_counts": {
+    "capacity_summary": 11,
+    "true_curve_difference": 12
+  },
+  "n_excluded_cells": 0,
+  "name": "Attia/Severson-like",
+  "program_id": "attia_severson_like_idx9_99",
+  "protocol_features_used": false,
+  "proxy_features_used": false,
+  "raw_source_root": "/Users/sreyavangara/Documents/Research/Code/battery-arr/literature_models_and_data/battery-fast-charging",
+  "true_curve_features_used": true,
+  "warnings_count": 100
+}

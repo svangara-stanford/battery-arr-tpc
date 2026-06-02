@@ -4,9 +4,12 @@ from pathlib import Path
 import pandas as pd
 
 from battery_aar.agents.orchestrator import run_rediscovery
+from battery_aar.features.feature_programs import build_feature_program_table
+from battery_aar.features.program_library import make_attia_severson_like_program
 import battery_aar.workflows.roles as workflow_roles
 from battery_aar.workflows.role_graph import run_role_workflow
 from battery_aar.workflows.schemas import EvaluationReport
+from .feature_program_test_utils import write_toy_feature_manifest, write_toy_processed_from_manifest
 
 
 def _write_toy_processed_dataset(base: Path) -> Path:
@@ -237,6 +240,43 @@ def test_role_graph_reports_best_successful_candidate_not_final_iteration(tmp_pa
     assert state["best_iteration"] == 1
     assert state["best_candidate_path"].endswith("role_graph_iter_001.py")
     assert [row["rmse"] for row in report["per_iteration_metrics"]] == [5.0, 1.0, 3.0]
+
+
+def test_role_graph_feature_program_smoke_generates_feature_set_variants(tmp_path):
+    manifest, raw_root = write_toy_feature_manifest(tmp_path, n_cells=12)
+    processed = write_toy_processed_from_manifest(tmp_path, manifest)
+    result = build_feature_program_table(
+        make_attia_severson_like_program(cycle_early=9, cycle_late=99),
+        manifest,
+        raw_root=raw_root,
+        out_dir=tmp_path / "feature_program",
+    )
+    out = tmp_path / "role_feature_program_run"
+
+    report = run_role_workflow(
+        processed_dir=processed,
+        reference_run=None,
+        out=out,
+        reports_dir=tmp_path / "reports",
+        offline=True,
+        iterations=1,
+        candidates_per_iteration=5,
+        include_feature_programs=True,
+        feature_program_mode="table",
+        feature_program_paths=[result.feature_table_path],
+    )
+
+    assert report["include_feature_programs"] is True
+    assert report["feature_program_report"]["true_raw_curve_features_used"] is True
+    feature_sets = {row["feature_set"] for row in report["per_iteration_metrics"]}
+    assert {"scalar_only", "curve_only", "scalar_plus_curve", "broad_physics", "all_available"}.issubset(feature_sets)
+    assert {"scalar_only", "curve_only", "scalar_plus_curve", "broad_physics", "all_available"}.issubset(
+        {row["feature_set"] for row in report["best_by_feature_set"]}
+    )
+    assert all(row["success"] for row in report["per_iteration_metrics"])
+    report_text = (tmp_path / "reports" / "role_agent_workflow.md").read_text()
+    assert "Feature Programs" in report_text
+    assert "Best By Feature Set" in report_text
 
 
 def test_role_graph_candidates_per_iteration_generates_distinct_specs(tmp_path):

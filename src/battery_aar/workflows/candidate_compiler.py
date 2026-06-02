@@ -15,6 +15,14 @@ SUPPORTED_MODEL_FAMILIES = {
 }
 
 SUPPORTED_TARGET_TRANSFORMS = {"raw", "log10"}
+SUPPORTED_FEATURE_SETS = {
+    "scalar_only",
+    "curve_only",
+    "scalar_plus_curve",
+    "broad_physics",
+    "protocol_only",
+    "all_available",
+}
 
 
 def _model_name(value: str | None) -> str:
@@ -66,6 +74,28 @@ def normalize_target_transform(value: str | None) -> str:
     return normalized
 
 
+def normalize_feature_set(value: str | None) -> str:
+    text = str(value or "all_available").strip().lower()
+    aliases = {
+        "all": "all_available",
+        "all_available": "all_available",
+        "scalar": "scalar_only",
+        "scalar_only": "scalar_only",
+        "curve": "curve_only",
+        "curve_only": "curve_only",
+        "scalar_curve": "scalar_plus_curve",
+        "scalar_plus_curve": "scalar_plus_curve",
+        "broad": "broad_physics",
+        "broad_physics": "broad_physics",
+        "protocol": "protocol_only",
+        "protocol_only": "protocol_only",
+    }
+    normalized = aliases.get(text, text)
+    if normalized not in SUPPORTED_FEATURE_SETS:
+        raise ValueError(f"Unsupported feature_set={value!r}; expected one of {sorted(SUPPORTED_FEATURE_SETS)}")
+    return normalized
+
+
 def _clean_hyperparameters(model_family: str, hyperparameters: dict[str, Any] | None) -> dict[str, Any]:
     raw = hyperparameters if isinstance(hyperparameters, dict) else {}
     allowed = {
@@ -109,6 +139,7 @@ def candidate_spec_from_plans(
 ) -> CandidateSpec:
     model_family = normalize_model_family(model_plan.model_family, model_plan.estimator_name)
     target_transform = normalize_target_transform(model_plan.target_transform)
+    feature_set = normalize_feature_set(model_plan.feature_set)
     return CandidateSpec(
         run_id=run_id,
         parent_artifact_ids=parent_artifact_ids or [feature_plan.artifact_id, model_plan.artifact_id],
@@ -128,6 +159,11 @@ def candidate_spec_from_plans(
         include_protocol_features=bool(feature_plan.include_protocol_features),
         model_family=model_family,
         target_transform=target_transform,
+        feature_set=feature_set,
+        feature_program_paths=list(feature_plan.feature_program_paths),
+        feature_program_mode="table" if feature_plan.feature_program_paths else "none",
+        include_feature_programs=bool(feature_plan.feature_program_paths),
+        feature_family_filter=[],
         preprocessing=list(model_plan.preprocessing_steps) or ["drop_all_nan_columns", "SimpleImputer(strategy='median')"],
         hyperparameters=_clean_hyperparameters(model_family, model_plan.hyperparameters),
     )
@@ -137,12 +173,18 @@ def compile_candidate_spec_to_python(candidate_spec: CandidateSpec, output_path:
     """Compile a declarative CandidateSpec into trusted executable candidate code."""
     model_family = normalize_model_family(candidate_spec.model_family)
     target_transform = normalize_target_transform(candidate_spec.target_transform)
+    feature_set = normalize_feature_set(candidate_spec.feature_set)
     hyperparameters = _clean_hyperparameters(model_family, candidate_spec.hyperparameters)
     constants = {
         "feature_families": list(candidate_spec.feature_families),
         "include_protocol_features": bool(candidate_spec.include_protocol_features),
         "model_family": model_family,
         "target_transform": target_transform,
+        "feature_set": feature_set,
+        "feature_program_paths": list(candidate_spec.feature_program_paths),
+        "feature_program_mode": candidate_spec.feature_program_mode,
+        "include_feature_programs": bool(candidate_spec.include_feature_programs),
+        "feature_family_filter": list(candidate_spec.feature_family_filter),
         "preprocessing": list(candidate_spec.preprocessing),
         "hyperparameters": hyperparameters,
     }
@@ -161,6 +203,11 @@ FEATURE_FAMILIES = {constants["feature_families"]!r}
 INCLUDE_PROTOCOL_FEATURES = {constants["include_protocol_features"]!r}
 MODEL_FAMILY = {constants["model_family"]!r}
 TARGET_TRANSFORM = {constants["target_transform"]!r}
+FEATURE_SET = {constants["feature_set"]!r}
+FEATURE_PROGRAM_PATHS = {constants["feature_program_paths"]!r}
+FEATURE_PROGRAM_MODE = {constants["feature_program_mode"]!r}
+INCLUDE_FEATURE_PROGRAMS = {constants["include_feature_programs"]!r}
+FEATURE_FAMILY_FILTER = {constants["feature_family_filter"]!r}
 PREPROCESSING = {constants["preprocessing"]!r}
 HYPERPARAMETERS = {constants["hyperparameters"]!r}
 IDENTIFIER_COLUMNS = {{
@@ -168,6 +215,16 @@ IDENTIFIER_COLUMNS = {{
     "barcode", "source_path", "file_path", "filename", "path", "channel",
     "cycle_life", "Lifetime", "protocol_readable", "policy_readable", "y",
 }}
+SCALAR_FAMILIES = {{
+    "capacity_summary", "resistance_summary", "thermal_summary", "energy_summary",
+    "capacity_summary_delta", "resistance_summary_delta", "thermal_summary_delta",
+    "energy_summary_delta", "scalar_delta",
+}}
+CURVE_FAMILIES = {{
+    "true_curve_shape", "true_curve_difference", "curve_difference_proxy",
+    "curve_difference_approximate", "curve_shape_proxy",
+}}
+PROTOCOL_FAMILIES = {{"protocol"}}
 
 
 def _make_estimator():
@@ -185,17 +242,75 @@ def _make_estimator():
     return Ridge(alpha=1.0)
 
 
+def _families_for_feature_set(feature_set, allow_protocol):
+    if FEATURE_FAMILY_FILTER:
+        families = set(FEATURE_FAMILY_FILTER)
+    elif feature_set == "scalar_only":
+        families = set(SCALAR_FAMILIES)
+    elif feature_set == "curve_only":
+        families = set(CURVE_FAMILIES)
+    elif feature_set == "scalar_plus_curve":
+        families = set(SCALAR_FAMILIES) | set(CURVE_FAMILIES)
+    elif feature_set == "broad_physics":
+        families = set(SCALAR_FAMILIES) | set(CURVE_FAMILIES)
+    elif feature_set == "protocol_only":
+        families = set(PROTOCOL_FAMILIES)
+    else:
+        families = set()
+    if allow_protocol and feature_set in {{"all_available", "protocol_only"}}:
+        families |= set(PROTOCOL_FAMILIES)
+    if not allow_protocol:
+        families -= set(PROTOCOL_FAMILIES)
+    return families
+
+
+def _select_feature_set_columns(features, feature_metadata, feature_set, allow_protocol):
+    if feature_metadata is None or len(feature_metadata) == 0:
+        if feature_set == "protocol_only":
+            return [col for col in features.columns if col.startswith("protocol_")]
+        if feature_set == "curve_only":
+            return [col for col in features.columns if "curve" in col or "qdiff" in col]
+        if feature_set == "scalar_only":
+            return [col for col in features.columns if not col.startswith("protocol_") and "curve" not in col and "qdiff" not in col]
+        return list(features.columns)
+    meta = feature_metadata.copy()
+    if "feature_family" not in meta.columns and "family" in meta.columns:
+        meta["feature_family"] = meta["family"]
+    if "family" not in meta.columns and "feature_family" in meta.columns:
+        meta["family"] = meta["feature_family"]
+    families = _families_for_feature_set(feature_set, allow_protocol)
+    if families:
+        selected = set(meta.loc[meta["feature_family"].astype(str).isin(families), "feature_name"].astype(str))
+    else:
+        selected = set(meta["feature_name"].astype(str))
+        if not allow_protocol:
+            protocol_cols = set(meta.loc[meta["feature_family"].astype(str).isin(PROTOCOL_FAMILIES), "feature_name"].astype(str))
+            selected -= protocol_cols
+    return [col for col in features.columns if col in selected]
+
+
 def _feature_frame(metadata, cycle_summary, config, feature_columns=None):
     max_cycle = int(config.get("max_cycle", 100))
     allow_protocol = bool(config.get("allow_protocol_features", INCLUDE_PROTOCOL_FEATURES))
     include_protocol = bool(INCLUDE_PROTOCOL_FEATURES and allow_protocol)
+    feature_program_paths = config.get("feature_program_paths", FEATURE_PROGRAM_PATHS)
+    include_feature_programs = bool(config.get("include_feature_programs", INCLUDE_FEATURE_PROGRAMS))
+    feature_program_mode = config.get("feature_program_mode", FEATURE_PROGRAM_MODE)
+    feature_family_filter = config.get("feature_family_filter", FEATURE_FAMILY_FILTER)
     ids = metadata[["row_id"]].drop_duplicates().copy()
-    features = build_all_battery_features(
+    features, feature_metadata = build_all_battery_features(
         metadata,
         cycle_summary,
         max_cycle=max_cycle,
         include_protocol=include_protocol,
+        return_feature_metadata=True,
+        feature_program_paths=feature_program_paths,
+        feature_program_mode=feature_program_mode,
+        include_feature_programs=include_feature_programs,
+        feature_family_filter=feature_family_filter,
     )
+    selected_columns = _select_feature_set_columns(features, feature_metadata, FEATURE_SET, allow_protocol)
+    features = features[selected_columns] if selected_columns else features.iloc[:, 0:0]
     key_name = features.index.name or "row_id"
     features = features.reset_index().rename(columns={{key_name: "row_id"}})
     if "row_id" not in features.columns:
