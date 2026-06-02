@@ -23,7 +23,7 @@ from battery_aar.features.schemas import FeatureProgram, FeatureProgramResult
 
 RAW_CYCLE_OPERATOR_TYPES = {"curve_shape", "cross_cycle_curve_delta"}
 RAW_ROOT_MARKER = "battery-fast-charging/"
-SOURCE_PATH_COLUMNS = ["source_path", "raw_file", "raw_path", "file_path", "path"]
+SOURCE_PATH_COLUMNS = ["canonical_raw_path", "source_path", "raw_file", "raw_path", "file_path", "path"]
 SOURCE_PATH_RESOLUTION_METHODS = ["direct", "rebased", "reconstructed", "unresolved"]
 
 
@@ -42,6 +42,7 @@ class RawPathResolution:
             "cell_id": cell_id,
             "batch_id": _clean_row_value(row, "batch_id"),
             "source_cell_id": _clean_row_value(row, "source_cell_id"),
+            "canonical_raw_path": _clean_row_value(row, "canonical_raw_path"),
             "source_column": self.source_column,
             "source_path": self.original_source_path,
             "resolved_source_path": self.resolved_source_path,
@@ -414,6 +415,7 @@ def build_feature_program_table(
                     "cell_id": cell_id,
                     "batch_id": _clean_row_value(row, "batch_id"),
                     "source_cell_id": _clean_row_value(row, "source_cell_id"),
+                    "canonical_raw_path": _clean_row_value(row, "canonical_raw_path"),
                     "source_path": resolution.original_source_path,
                     "resolved_source_path": resolution.resolved_source_path,
                     "source_path_resolution_method": resolution.method,
@@ -487,6 +489,7 @@ def build_feature_program_table(
             "cell_id",
             "batch_id",
             "source_cell_id",
+            "canonical_raw_path",
             "source_path",
             "resolved_source_path",
             "source_path_resolution_method",
@@ -501,6 +504,7 @@ def build_feature_program_table(
             "cell_id",
             "batch_id",
             "source_cell_id",
+            "canonical_raw_path",
             "source_column",
             "source_path",
             "resolved_source_path",

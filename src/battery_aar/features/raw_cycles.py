@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import gzip
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -38,7 +39,11 @@ NUMERIC_CYCLE_COLUMNS = [
 
 
 def load_attia_json_payload(path: Union[str, Path]) -> Dict[str, Any]:
-    return json.loads(Path(path).read_text())
+    raw_path = Path(path)
+    if raw_path.suffix == ".gz":
+        with gzip.open(raw_path, "rt", encoding="utf-8") as handle:
+            return json.load(handle)
+    return json.loads(raw_path.read_text())
 
 
 def _as_1d(value: Any) -> np.ndarray:
@@ -78,7 +83,7 @@ def _canonical_from_mapping(mapping: Dict[str, Any], *, cell_id: Optional[str], 
         "charge_energy": ["charge_energy", "ECharge", "e_charge"],
         "discharge_energy": ["discharge_energy", "EDischarge", "e_discharge"],
         "internal_resistance": ["dc_internal_resistance", "internal_resistance", "IR", "resistance"],
-        "temperature": ["temperature", "T", "temp"],
+        "temperature": ["temperature", "temperature_average", "Tavg", "Tmean", "T", "temp"],
     }
     data: dict[str, Any] = {}
     resolved_signals: dict[str, str] = {}

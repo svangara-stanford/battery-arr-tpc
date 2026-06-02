@@ -73,6 +73,24 @@ def _oed_manifest(processed_dir: Path) -> pd.DataFrame:
     return metadata[metadata["source_path"].notna()].copy()
 
 
+def _severson_manifest(processed_dir: Path) -> pd.DataFrame:
+    path = processed_dir / "cell_metadata.csv"
+    if not path.exists():
+        raise FileNotFoundError(f"Severson processed metadata not found: {path}")
+    metadata = pd.read_csv(path)
+    if "canonical_raw_path" not in metadata.columns and "source_path" not in metadata.columns:
+        raise ValueError("Severson feature-program build requires canonical_raw_path or source_path in cell_metadata.csv")
+    if "batch_id" not in metadata.columns and "source_batch" in metadata.columns:
+        metadata["batch_id"] = metadata["source_batch"]
+    if "source_cell_id" not in metadata.columns and "source_cell_index" in metadata.columns:
+        metadata["source_cell_id"] = metadata["source_cell_index"].map(lambda value: f"cell_{int(value):03d}" if pd.notna(value) else "")
+    path_cols = [col for col in ["canonical_raw_path", "source_path"] if col in metadata.columns]
+    mask = pd.Series(False, index=metadata.index)
+    for col in path_cols:
+        mask = mask | metadata[col].notna()
+    return metadata[mask].copy()
+
+
 def _batch9_manifest(root: Path) -> pd.DataFrame:
     batch_path = root / "data" / VALIDATION_BATCH_NAME
     if not batch_path.is_dir():
@@ -86,7 +104,7 @@ def _batch9_manifest(root: Path) -> pd.DataFrame:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build trusted Open Battery Agents feature-program tables.")
-    parser.add_argument("--battery-fast-charging-root", type=Path, required=True)
+    parser.add_argument("--battery-fast-charging-root", type=Path, default=None)
     parser.add_argument("--processed-dir", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--recipe", choices=sorted(PROGRAM_RECIPES), default="minimal_debug")
@@ -96,27 +114,41 @@ def main() -> int:
     parser.add_argument("--cycle-late-index", type=int, default=99)
     parser.add_argument("--include-protocol-features", type=_bool_arg, default=False)
     parser.add_argument("--strict", action="store_true")
-    parser.add_argument("--batch", choices=["oed", "batch9", "all"], default="oed")
+    parser.add_argument("--batch", choices=["oed", "batch9", "all", "severson"], default="oed")
     args = parser.parse_args()
 
-    paths = resolve_paper_paths(args.battery_fast_charging_root)
     program = _load_program(args)
     if args.batch == "oed":
+        if args.battery_fast_charging_root is None:
+            raise ValueError("--battery-fast-charging-root is required for --batch oed")
+        paths = resolve_paper_paths(args.battery_fast_charging_root)
         manifest = _oed_manifest(args.processed_dir)
+        raw_root = paths.root
     elif args.batch == "batch9":
+        if args.battery_fast_charging_root is None:
+            raise ValueError("--battery-fast-charging-root is required for --batch batch9")
+        paths = resolve_paper_paths(args.battery_fast_charging_root)
         manifest = _batch9_manifest(paths.root)
-    else:
+        raw_root = paths.root
+    elif args.batch == "all":
+        if args.battery_fast_charging_root is None:
+            raise ValueError("--battery-fast-charging-root is required for --batch all")
+        paths = resolve_paper_paths(args.battery_fast_charging_root)
         oed = _oed_manifest(args.processed_dir)
         batch9 = _batch9_manifest(paths.root)
         if not oed.empty:
             batch9 = batch9.copy()
             batch9["row_id"] = pd.to_numeric(batch9["row_id"], errors="raise").astype(int) + int(pd.to_numeric(oed["row_id"], errors="coerce").max()) + 1
         manifest = pd.concat([oed, batch9], ignore_index=True)
+        raw_root = paths.root
+    else:
+        manifest = _severson_manifest(args.processed_dir)
+        raw_root = args.processed_dir
 
     result = build_feature_program_table(
         program,
         manifest,
-        raw_root=paths.root,
+        raw_root=raw_root,
         out_dir=args.out,
         strict=args.strict,
     )

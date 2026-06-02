@@ -202,6 +202,10 @@ def make_search_split(
         batch_ids = split_meta["batch_id"].dropna().astype(str)
         if batch_ids.str.contains("2019-01-24_batch9", regex=False).any():
             raise ValueError("Batch 9 must not be included in the surrogate search dataset")
+    elif "source_batch" in split_meta.columns:
+        source_batches = split_meta["source_batch"].dropna().astype(str)
+        if source_batches.str.contains("2019-01-24_batch9", regex=False).any():
+            raise ValueError("Batch 9 must not be included in the surrogate search dataset")
 
     mode = "batch" if split_mode == "leave_one_batch_out" else split_mode
     if mode == "random":
@@ -218,12 +222,18 @@ def make_search_split(
         unique_groups = sorted(split_meta["group_key"].astype(str).unique().tolist())
         validation_groups = _choose_validation_groups(unique_groups, validation_fraction, split_seed)
     elif mode == "batch":
-        if "batch_id" not in split_meta.columns:
-            raise ValueError("Batch split requires a batch_id column")
-        if split_meta["batch_id"].isna().any():
-            raise ValueError("Batch split requires non-missing batch_id values")
-        split_meta["group_key"] = split_meta["batch_id"].astype(str)
-        group_type = "batch"
+        if "batch_id" in split_meta.columns:
+            group_col = "batch_id"
+        elif "source_batch" in split_meta.columns:
+            group_col = "source_batch"
+        elif "source_file" in split_meta.columns:
+            group_col = "source_file"
+        else:
+            raise ValueError("Batch split requires batch_id, source_batch, or source_file")
+        if split_meta[group_col].isna().any():
+            raise ValueError(f"Batch split requires non-missing {group_col} values")
+        split_meta["group_key"] = split_meta[group_col].astype(str)
+        group_type = group_col
         unique_groups = sorted(split_meta["group_key"].unique().tolist())
         validation_groups = _choose_validation_groups(unique_groups, validation_fraction, split_seed, validation_batch_id)
     else:
@@ -244,7 +254,7 @@ def make_search_split(
         assert train_groups.isdisjoint(val_groups), f"{mode} groups overlap between train and validation"
 
     columns = ["row_id", "cell_id", "split", "group_key"]
-    for col in ["batch_id", "protocol_readable", "C1", "C2", "C3", "C4"]:
+    for col in ["batch_id", "source_batch", "source_file", "label_source", "protocol_readable", "C1", "C2", "C3", "C4"]:
         if col in split_meta.columns:
             columns.append(col)
     assignments = split_meta[columns].copy()

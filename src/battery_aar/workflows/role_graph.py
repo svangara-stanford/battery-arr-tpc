@@ -78,7 +78,11 @@ def _load_processed(processed_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame, pd
         return metadata, cycles, labels, labels_path
     if "cycle_life" not in metadata.columns:
         raise ValueError("processed metadata must contain cycle_life or processed_dir must contain labels.csv")
-    labels = metadata[["row_id", "cycle_life"]].rename(columns={"cycle_life": "y"}).copy()
+    label_cols = ["row_id", "cycle_life"]
+    for col in ["cell_id", "label_source"]:
+        if col in metadata.columns:
+            label_cols.append(col)
+    labels = metadata[label_cols].rename(columns={"cycle_life": "y"}).copy()
     return metadata, cycles, labels, None
 
 
@@ -94,6 +98,25 @@ def _finite_labels(labels: pd.DataFrame) -> pd.DataFrame:
     out["row_id"] = pd.to_numeric(out["row_id"], errors="raise").astype(int)
     out["y"] = pd.to_numeric(out["y"], errors="coerce")
     return out[np.isfinite(out["y"])].copy()
+
+
+def _label_source_summary(metadata: pd.DataFrame, labels: pd.DataFrame) -> dict[str, Any]:
+    sources: list[str] = []
+    if "label_source" in metadata.columns:
+        sources.extend(metadata["label_source"].dropna().astype(str).unique().tolist())
+    if "label_source" in labels.columns:
+        sources.extend(labels["label_source"].dropna().astype(str).unique().tolist())
+    unique_sources = sorted(set(sources))
+    source_dataset = None
+    if "source_dataset" in metadata.columns and metadata["source_dataset"].notna().any():
+        source_dataset = ",".join(sorted(metadata["source_dataset"].dropna().astype(str).unique().tolist()))
+    return {
+        "label_sources": unique_sources,
+        "label_source": unique_sources[0] if len(unique_sources) == 1 else ",".join(unique_sources),
+        "source_dataset": source_dataset,
+        "true_measured_cycle_life_labels": "true_measured_cycle_life" in unique_sources,
+        "author_model_prediction_pseudo_labels": "author_model_prediction" in unique_sources,
+    }
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -376,6 +399,7 @@ def _write_report(report_path: Path, report: dict[str, Any]) -> None:
     best_by_feature_set = report.get("best_by_feature_set") or []
     best_by_target_transform = report.get("best_by_target_transform") or []
     dedup = report.get("candidate_config_deduplication") or {}
+    label_summary = report.get("label_source_summary") or {}
     lines = [
         "# Open Battery Agents Role Workflow",
         "",
@@ -384,6 +408,10 @@ def _write_report(report_path: Path, report: dict[str, Any]) -> None:
         f"offline: `{report.get('offline')}`",
         f"iterations: `{report.get('iterations')}`",
         f"candidates_per_iteration: `{report.get('candidates_per_iteration')}`",
+        f"label_source: `{label_summary.get('label_source')}`",
+        f"source_dataset: `{label_summary.get('source_dataset')}`",
+        f"true_measured_cycle_life_labels: `{label_summary.get('true_measured_cycle_life_labels')}`",
+        f"author_model_prediction_pseudo_labels: `{label_summary.get('author_model_prediction_pseudo_labels')}`",
         "",
         "## Role Sequence",
         "",
@@ -619,6 +647,7 @@ class RoleGraphRunner:
 
         metadata, _cycles, labels, labels_path = _load_processed(cfg.processed_dir)
         labels = _finite_labels(labels)
+        label_source_summary = _label_source_summary(metadata, labels)
         train_ids, val_ids, _test_ids, split_manifest, assignments = make_search_split(
             metadata,
             labels,
@@ -931,6 +960,9 @@ class RoleGraphRunner:
             "feature_family_filter": list(cfg.feature_family_filter or []),
             "cycle_early_index": cfg.cycle_early_index,
             "cycle_late_index": cfg.cycle_late_index,
+            "label_source_summary": label_source_summary,
+            "label_source": label_source_summary.get("label_source"),
+            "source_dataset": label_source_summary.get("source_dataset"),
             "feature_program_report": feature_program_report,
             "n_train_cells": len(train_ids),
             "n_validation_cells": len(val_ids),
