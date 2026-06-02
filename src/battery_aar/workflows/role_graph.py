@@ -246,7 +246,9 @@ def _candidate_metric_row(record: dict[str, Any]) -> dict[str, Any]:
         "include_protocol_features": candidate.include_protocol_features,
         "compiled_candidate": candidate.compiled_candidate,
         "feature_set": candidate.feature_set,
+        "candidate_config_key": _candidate_config_key(candidate),
         "feature_program_count": len(candidate.feature_program_paths or []),
+        "hyperparameters": dict(candidate.hyperparameters or {}),
         "rmse": evaluation.rmse,
         "mae": evaluation.mae,
         "r2": evaluation.r2,
@@ -261,6 +263,50 @@ def _candidate_metric_row(record: dict[str, Any]) -> dict[str, Any]:
         "review_verdict": review.verdict,
         "review_status": _final_review_status(review.verdict, review.issues, bool(evaluation.success)),
         "success": bool(evaluation.success),
+    }
+
+
+def _candidate_config_dict(candidate: Any) -> dict[str, Any]:
+    return {
+        "feature_set": str(candidate.feature_set or "all_available"),
+        "model_family": str(candidate.model_family or ""),
+        "target_transform": str(candidate.target_transform or "raw"),
+        "feature_program_paths": sorted(str(path) for path in list(candidate.feature_program_paths or [])),
+        "feature_program_mode": str(candidate.feature_program_mode or "none"),
+        "include_feature_programs": bool(candidate.include_feature_programs),
+        "include_protocol_features": bool(candidate.include_protocol_features),
+        "feature_family_filter": sorted(str(value) for value in list(candidate.feature_family_filter or [])),
+        "feature_families": sorted(str(value) for value in list(candidate.feature_families or [])),
+        "preprocessing": list(candidate.preprocessing or []),
+        "hyperparameters": dict(candidate.hyperparameters or {}),
+    }
+
+
+def _candidate_config_key(candidate: Any) -> str:
+    return json.dumps(_candidate_config_dict(candidate), sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _deduplicate_successful_records_by_config(records: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    successful = [record for record in records if record["evaluation"].success and record["evaluation"].rmse is not None]
+    best_by_config: dict[str, dict[str, Any]] = {}
+    duplicate_candidate_ids: list[str] = []
+    for record in successful:
+        candidate = record["candidate"]
+        key = _candidate_config_key(candidate)
+        existing = best_by_config.get(key)
+        if existing is None:
+            best_by_config[key] = record
+            continue
+        duplicate_candidate_ids.append(candidate.candidate_id)
+        if float(record["evaluation"].rmse) < float(existing["evaluation"].rmse):
+            duplicate_candidate_ids.append(existing["candidate"].candidate_id)
+            best_by_config[key] = record
+    unique_records = sorted(best_by_config.values(), key=lambda record: float(record["evaluation"].rmse))
+    return unique_records, {
+        "n_successful_candidate_ids": int(len(successful)),
+        "n_unique_candidate_configs": int(len(unique_records)),
+        "n_duplicate_candidate_configs_pruned": int(max(0, len(successful) - len(unique_records))),
+        "duplicate_candidate_ids_preview": duplicate_candidate_ids[:25],
     }
 
 
@@ -329,6 +375,7 @@ def _write_report(report_path: Path, report: dict[str, Any]) -> None:
     feature_program_report = report.get("feature_program_report") or {}
     best_by_feature_set = report.get("best_by_feature_set") or []
     best_by_target_transform = report.get("best_by_target_transform") or []
+    dedup = report.get("candidate_config_deduplication") or {}
     lines = [
         "# Open Battery Agents Role Workflow",
         "",
@@ -379,15 +426,22 @@ def _write_report(report_path: Path, report: dict[str, Any]) -> None:
             f"- best candidate id: `{report.get('best_candidate_id')}`",
             f"- best candidate path: `{report.get('candidate_path')}`",
             f"- best iteration: `{report.get('best_iteration')}`",
-        f"- final iteration candidate path: `{report.get('final_iteration_candidate_path')}`",
-        f"- compiled candidate: `{candidate_spec.get('compiled_candidate')}`",
-        f"- model family: `{candidate_spec.get('model_family')}`",
-        f"- target transform: `{candidate_spec.get('target_transform')}`",
-        f"- feature families: `{', '.join(candidate_spec.get('feature_families', []))}`",
-        f"- include protocol features: `{candidate_spec.get('include_protocol_features')}`",
-        f"- preprocessing: `{', '.join(candidate_spec.get('preprocessing', []))}`",
-        f"- best review status: `{report.get('best_review_status')}`",
-        f"- review verdict: `{report.get('review_verdict')}`",
+            f"- final iteration candidate path: `{report.get('final_iteration_candidate_path')}`",
+            f"- compiled candidate: `{candidate_spec.get('compiled_candidate')}`",
+            f"- model family: `{candidate_spec.get('model_family')}`",
+            f"- target transform: `{candidate_spec.get('target_transform')}`",
+            f"- feature families: `{', '.join(candidate_spec.get('feature_families', []))}`",
+            f"- include protocol features: `{candidate_spec.get('include_protocol_features')}`",
+            f"- preprocessing: `{', '.join(candidate_spec.get('preprocessing', []))}`",
+            f"- best review status: `{report.get('best_review_status')}`",
+            f"- review verdict: `{report.get('review_verdict')}`",
+            "",
+            "## Candidate Config Deduplication",
+            "",
+            f"- n_candidate_ids_generated: `{report.get('n_candidate_ids_generated', dedup.get('n_candidate_ids_generated'))}`",
+            f"- n_unique_candidate_configs: `{report.get('n_unique_candidate_configs', dedup.get('n_unique_candidate_configs'))}`",
+            f"- n_duplicate_candidate_configs_pruned: `{report.get('n_duplicate_candidate_configs_pruned', dedup.get('n_duplicate_candidate_configs_pruned'))}`",
+            f"- final_batch9_top_k_unique: `{report.get('final_batch9_top_k_unique', dedup.get('final_batch9_top_k_unique'))}`",
             "",
             "## Per-Iteration Candidates",
             "",
@@ -677,6 +731,14 @@ class RoleGraphRunner:
         best_candidate = best_record["candidate"] if best_record else final_candidate
         best_review = best_record["review"] if best_record else final_review
         successful = [record for record in candidate_records if record["evaluation"].success and record["evaluation"].rmse is not None]
+        unique_successful, candidate_dedup_stats = _deduplicate_successful_records_by_config(candidate_records)
+        candidate_dedup_stats.update(
+            {
+                "n_candidate_ids_generated": int(len(candidate_specs)),
+                "n_evaluated_candidate_ids": int(len(candidate_records)),
+                "final_batch9_top_k_unique": 0,
+            }
+        )
         all_candidate_metrics = [_candidate_metric_row(record) for record in candidate_records]
         per_iteration_metrics = [_candidate_metric_row(record) for record in per_iteration_records]
         best_by_feature_set = _best_metric_rows_by(all_candidate_metrics, "feature_set")
@@ -775,7 +837,8 @@ class RoleGraphRunner:
                 if int(cfg.final_batch9_top_k) > 0:
                     topk_dir = cfg.out / "final_batch9_topk_predictions"
                     topk_dir.mkdir(parents=True, exist_ok=True)
-                    top_records = sorted(successful, key=lambda record: float(record["evaluation"].rmse))[: int(cfg.final_batch9_top_k)]
+                    top_records = unique_successful[: int(cfg.final_batch9_top_k)]
+                    candidate_dedup_stats["final_batch9_top_k_unique"] = int(len(top_records))
                     for rank, record in enumerate(top_records, start=1):
                         metrics, predictions = evaluate_locked_candidate(record)
                         candidate = record["candidate"]
@@ -785,6 +848,11 @@ class RoleGraphRunner:
                             {
                                 "rank_by_surrogate_rmse": rank,
                                 "candidate_id": candidate.candidate_id,
+                                "candidate_config_key": _candidate_config_key(candidate),
+                                "model_family": candidate.model_family,
+                                "feature_set": candidate.feature_set,
+                                "target_transform": candidate.target_transform,
+                                "include_protocol_features": candidate.include_protocol_features,
                                 "candidate_path": candidate.candidate_path,
                                 "surrogate_rmse": record["evaluation"].rmse,
                                 "batch9_rmse": metrics.get("rmse"),
@@ -830,6 +898,7 @@ class RoleGraphRunner:
                 "final_batch9_metrics": str(final_batch9_metrics_path) if final_batch9_metrics_path else "",
                 "final_batch9_predictions": str(final_batch9_predictions_path) if final_batch9_predictions_path else "",
                 "final_batch9_topk_metrics": str(final_batch9_topk_metrics_path) if final_batch9_topk_metrics_path else "",
+                "candidate_config_deduplication": json.dumps(candidate_dedup_stats, sort_keys=True),
             },
         )
         self.store.write_artifact(state)
@@ -876,6 +945,11 @@ class RoleGraphRunner:
             "per_iteration_metrics": per_iteration_metrics,
             "best_by_feature_set": best_by_feature_set,
             "best_by_target_transform": best_by_target_transform,
+            "candidate_config_deduplication": candidate_dedup_stats,
+            "n_candidate_ids_generated": candidate_dedup_stats["n_candidate_ids_generated"],
+            "n_unique_candidate_configs": candidate_dedup_stats["n_unique_candidate_configs"],
+            "n_duplicate_candidate_configs_pruned": candidate_dedup_stats["n_duplicate_candidate_configs_pruned"],
+            "final_batch9_top_k_unique": candidate_dedup_stats["final_batch9_top_k_unique"],
             "review_verdict": best_review.verdict if best_review else None,
             "best_review_status": _final_review_status(best_review.verdict if best_review else None, best_review.issues if best_review else [], best_eval.success if best_eval else False),
             "final_review_status": _final_review_status(final_review.verdict if final_review else None, final_review.issues if final_review else [], final_eval.success if final_eval else False),

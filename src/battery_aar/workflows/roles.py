@@ -334,6 +334,47 @@ class ModelArchitect:
 class CodeGenerator:
     role_name = "CodeGenerator"
 
+    def _variant_hyperparameters(self, model_family: str, iteration: int, variant_index: int) -> dict[str, Any]:
+        seed = 1009 * int(iteration) + 37 * int(variant_index)
+        selector = int(iteration) + int(variant_index)
+        if model_family == "Ridge":
+            alphas = [0.1, 0.3, 1.0, 3.0, 10.0, 30.0]
+            return {"alpha": alphas[selector % len(alphas)]}
+        if model_family == "ElasticNetCV":
+            l1_ratios = [[0.15, 0.5, 0.85], [0.25, 0.5, 0.75], [0.1, 0.3, 0.7, 0.9]]
+            return {
+                "l1_ratio": l1_ratios[selector % len(l1_ratios)],
+                "n_alphas": [25, 50, 75][selector % 3],
+                "eps": [1e-3, 3e-4, 1e-4][selector % 3],
+                "cv": 3,
+                "max_iter": 10000,
+                "random_state": seed,
+            }
+        if model_family == "LassoCV":
+            return {
+                "n_alphas": [25, 50, 75][selector % 3],
+                "eps": [1e-3, 3e-4, 1e-4][selector % 3],
+                "cv": 3,
+                "max_iter": 10000,
+                "random_state": seed,
+            }
+        if model_family == "RandomForestRegressor":
+            return {
+                "n_estimators": [80, 120, 180][selector % 3],
+                "max_depth": [None, 4, 7][selector % 3],
+                "min_samples_leaf": [1, 2, 4][selector % 3],
+                "random_state": seed,
+            }
+        if model_family == "GradientBoostingRegressor":
+            return {
+                "n_estimators": [80, 120, 180][selector % 3],
+                "learning_rate": [0.03, 0.05, 0.08][selector % 3],
+                "max_depth": [1, 2, 3][selector % 3],
+                "min_samples_leaf": [1, 2, 4][selector % 3],
+                "random_state": seed,
+            }
+        return {}
+
     def _write_spec(
         self,
         ctx: RoleContext,
@@ -420,7 +461,9 @@ class CodeGenerator:
     def _compiled_variants(self, ctx: RoleContext, feature_plan: FeaturePlan, model_plan: ModelPlan, iteration: int) -> list[tuple[str, FeaturePlan, ModelPlan]]:
         n = max(1, int(ctx.candidates_per_iteration))
         if n == 1:
-            return [(f"role_graph_iter_{iteration:03d}", feature_plan, model_plan)]
+            model_family = model_plan.estimator_name or model_plan.model_family
+            variant_model_plan = model_plan.model_copy(update={"hyperparameters": self._variant_hyperparameters(str(model_family), iteration, 0)})
+            return [(f"role_graph_iter_{iteration:03d}", feature_plan, variant_model_plan)]
         model_families = ["Ridge", "ElasticNetCV", "LassoCV", "RandomForestRegressor", "GradientBoostingRegressor"]
         target_transforms = ["raw", "log10"]
         feature_sets = ["all_available"]
@@ -437,6 +480,9 @@ class CodeGenerator:
             ("GradientBoostingRegressor", "log10", bool(feature_plan.include_protocol_features), feature_sets[min(4, len(feature_sets) - 1)]),
             ("LassoCV", "log10", False if ctx.allow_protocol_features else bool(feature_plan.include_protocol_features), feature_sets[-1]),
         ]
+        if preferred_keys:
+            shift = int(iteration) % len(preferred_keys)
+            preferred_keys = preferred_keys[shift:] + preferred_keys[:shift]
         all_keys = preferred_keys + [
             (model_family, target_transform, include_protocol, feature_set)
             for feature_set in feature_sets
@@ -459,6 +505,7 @@ class CodeGenerator:
                     "estimator_name": model_family,
                     "target_transform": target_transform,
                     "feature_set": feature_set,
+                    "hyperparameters": self._variant_hyperparameters(model_family, iteration, len(variants)),
                 }
             )
             variants.append((candidate_id, variant_feature_plan, variant_model_plan))

@@ -442,6 +442,41 @@ def test_role_graph_final_batch9_topk_runs_after_search(tmp_path):
     assert report["locked_batch9_validation"]["status"] == "ok"
     assert report["locked_batch9_validation"]["top_k_only"] == 2
     assert len(report["final_batch9_topk_rows"]) == 2
+    assert report["final_batch9_top_k_unique"] == 2
+
+
+def test_role_graph_final_batch9_topk_deduplicates_identical_candidate_configs(tmp_path, monkeypatch):
+    processed = _write_toy_processed_dataset(tmp_path)
+    batch9_path = _write_toy_batch9(tmp_path)
+
+    def duplicate_variants(self, ctx, feature_plan, model_plan, iteration):
+        return [
+            (f"role_graph_iter_{iteration:03d}_variant_{idx:02d}", feature_plan, model_plan)
+            for idx in range(2)
+        ]
+
+    monkeypatch.setattr(workflow_roles.CodeGenerator, "_compiled_variants", duplicate_variants)
+    out = tmp_path / "role_topk_dedup_run"
+    report = run_role_workflow(
+        processed_dir=processed,
+        reference_run=None,
+        out=out,
+        reports_dir=tmp_path / "reports",
+        offline=True,
+        iterations=2,
+        candidates_per_iteration=2,
+        final_batch9_top_k=3,
+        batch9_path=batch9_path,
+    )
+
+    topk = pd.read_csv(out / "final_batch9_topk_metrics.csv")
+    assert report["n_candidate_ids_generated"] == 4
+    assert report["n_unique_candidate_configs"] == 1
+    assert report["n_duplicate_candidate_configs_pruned"] == 3
+    assert report["final_batch9_top_k_unique"] == 1
+    assert len(report["final_batch9_topk_rows"]) == 1
+    assert len(topk) == 1
+    assert topk["candidate_config_key"].nunique() == 1
 
 
 def test_role_graph_report_includes_locked_validation_section(tmp_path):
