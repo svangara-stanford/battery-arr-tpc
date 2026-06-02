@@ -16,7 +16,7 @@ from battery_aar.features.program_library import (
     make_scalar_baseline_program,
 )
 from battery_aar.paper_reproduction.paths import VALIDATION_BATCH_NAME, resolve_paper_paths
-from battery_aar.workflows.schemas import FeatureOperatorSpec, FeatureProgram
+from battery_aar.features.schemas import FeatureOperatorSpec, FeatureProgram
 
 
 def _bool_arg(value: str | bool) -> bool:

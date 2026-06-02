@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -12,11 +12,11 @@ def new_tool_call_id() -> str:
 
 class ToolRequestBase(BaseModel):
     run_id: str = "tool_run"
-    run_dir: str | None = None
+    run_dir: Optional[str] = None
     tool_call_id: str = Field(default_factory=new_tool_call_id)
-    iteration: int | None = None
-    agent_role: str | None = None
-    input_artifact_ids: list[str] = Field(default_factory=list)
+    iteration: Optional[int] = None
+    agent_role: Optional[str] = None
+    input_artifact_ids: List[str] = Field(default_factory=list)
 
 
 class ToolResponseBase(BaseModel):
@@ -24,48 +24,48 @@ class ToolResponseBase(BaseModel):
     tool_call_id: str
     run_id: str
     success: bool
-    output_artifact_ids: list[str] = Field(default_factory=list)
-    output_paths: dict[str, str] = Field(default_factory=dict)
-    error_type: str | None = None
-    error_message: str | None = None
-    duration_ms: float | None = None
+    output_artifact_ids: List[str] = Field(default_factory=list)
+    output_paths: Dict[str, str] = Field(default_factory=dict)
+    error_type: Optional[str] = None
+    error_message: Optional[str] = None
+    duration_ms: Optional[float] = None
 
 
 class DatasetProfileRequest(ToolRequestBase):
-    processed_dir: str | None = None
-    metadata_path: str | None = None
-    cycle_summary_path: str | None = None
-    labels_path: str | None = None
+    processed_dir: Optional[str] = None
+    metadata_path: Optional[str] = None
+    cycle_summary_path: Optional[str] = None
+    labels_path: Optional[str] = None
     data_source: str = "processed"
-    label_source: str | None = None
+    label_source: Optional[str] = None
 
 
 class DatasetProfileResponse(ToolResponseBase):
-    profile: dict[str, Any] = Field(default_factory=dict)
+    profile: Dict[str, Any] = Field(default_factory=dict)
 
 
 class BuildFeaturesRequest(ToolRequestBase):
     metadata_path: str
     cycle_summary_path: str
-    output_path: str | None = None
+    output_path: Optional[str] = None
     max_cycle: int = 100
     include_protocol: bool = True
     return_feature_metadata: bool = True
-    feature_program_paths: list[str] = Field(default_factory=list)
+    feature_program_paths: List[str] = Field(default_factory=list)
     feature_program_mode: str = "none"
     include_feature_programs: bool = False
-    feature_family_filter: list[str] = Field(default_factory=list)
-    feature_program_recipe: str | None = None
-    feature_program_json: str | None = None
+    feature_family_filter: List[str] = Field(default_factory=list)
+    feature_program_recipe: Optional[str] = None
+    feature_program_json: Optional[str] = None
 
 
 class BuildFeaturesResponse(ToolResponseBase):
     n_rows: int = 0
     n_features: int = 0
-    feature_columns: list[str] = Field(default_factory=list)
-    feature_programs_used: list[str] = Field(default_factory=list)
+    feature_columns: List[str] = Field(default_factory=list)
+    feature_programs_used: List[str] = Field(default_factory=list)
     n_feature_program_columns: int = 0
-    feature_family_counts: dict[str, int] = Field(default_factory=dict)
+    feature_family_counts: Dict[str, int] = Field(default_factory=dict)
     n_matched_rows: int = 0
     n_missing_rows: int = 0
     true_raw_curve_features_used: bool = False
@@ -74,8 +74,8 @@ class BuildFeaturesResponse(ToolResponseBase):
 
 
 class FeatureProgramsResponse(ToolResponseBase):
-    recipes: list[str] = Field(default_factory=list)
-    operators: list[dict[str, Any]] = Field(default_factory=list)
+    recipes: List[str] = Field(default_factory=list)
+    operators: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class CandidateReviewRequest(ToolRequestBase):
@@ -83,47 +83,47 @@ class CandidateReviewRequest(ToolRequestBase):
 
 
 class CandidateReviewResponse(ToolResponseBase):
-    verdict: str | None = None
-    issues: list[str] = Field(default_factory=list)
-    recommendations: list[str] = Field(default_factory=list)
-    failure_reason: str | None = None
+    verdict: Optional[str] = None
+    issues: List[str] = Field(default_factory=list)
+    recommendations: List[str] = Field(default_factory=list)
+    failure_reason: Optional[str] = None
 
 
 class CandidateEvaluateRequest(ToolRequestBase):
     candidate_path: str
     metadata_path: str
     cycle_summary_path: str
-    labels_path: str | None = None
-    split_assignments_path: str | None = None
+    labels_path: Optional[str] = None
+    split_assignments_path: Optional[str] = None
     split_mode: str = "tool_validation"
     max_cycle: int = 100
     allow_protocol_features: bool = False
-    weak_rmse: float | None = None
-    strong_rmse: float | None = None
+    weak_rmse: Optional[float] = None
+    strong_rmse: Optional[float] = None
     timeout_s: int = 30
-    feature_program_paths: list[str] = Field(default_factory=list)
+    feature_program_paths: List[str] = Field(default_factory=list)
     feature_program_mode: str = "none"
     include_feature_programs: bool = False
-    feature_family_filter: list[str] = Field(default_factory=list)
+    feature_family_filter: List[str] = Field(default_factory=list)
 
 
 class CandidateEvaluateResponse(ToolResponseBase):
-    metrics: dict[str, Any] = Field(default_factory=dict)
-    n_eval: int | None = None
-    prediction_path: str | None = None
-    failure_reason: str | None = None
-    traceback: str | None = None
+    metrics: Dict[str, Any] = Field(default_factory=dict)
+    n_eval: Optional[int] = None
+    prediction_path: Optional[str] = None
+    failure_reason: Optional[str] = None
+    traceback: Optional[str] = None
 
 
 class RunCompareRequest(ToolRequestBase):
     reports_dir: str = "reports"
-    summary_csv: str | None = None
-    run_ids: list[str] | None = None
-    output_path: str | None = None
+    summary_csv: Optional[str] = None
+    run_ids: Optional[List[str]] = None
+    output_path: Optional[str] = None
 
 
 class RunCompareResponse(ToolResponseBase):
-    comparison_rows: list[dict[str, Any]] = Field(default_factory=list)
+    comparison_rows: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class ToolDescriptor(BaseModel):
@@ -133,4 +133,4 @@ class ToolDescriptor(BaseModel):
 
 
 class ToolListResponse(ToolResponseBase):
-    tools: list[ToolDescriptor] = Field(default_factory=list)
+    tools: List[ToolDescriptor] = Field(default_factory=list)

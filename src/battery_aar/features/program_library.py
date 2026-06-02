@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Callable, Dict
 
-from battery_aar.workflows.schemas import FeatureOperatorSpec, FeatureProgram
+from battery_aar.features.schemas import FeatureOperatorSpec, FeatureProgram
 
 
 def _program(program_id: str, name: str, description: str, operators: list[FeatureOperatorSpec], first_n_cycles: int, include_protocol: bool = False) -> FeatureProgram:

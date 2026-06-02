@@ -18,7 +18,7 @@ from battery_aar.features.raw_cycles import (
     validate_feature_metadata,
     validate_feature_table,
 )
-from battery_aar.workflows.schemas import FeatureProgram, FeatureProgramResult
+from battery_aar.features.schemas import FeatureProgram, FeatureProgramResult
 
 RAW_CYCLE_OPERATOR_TYPES = {"curve_shape", "cross_cycle_curve_delta"}
 

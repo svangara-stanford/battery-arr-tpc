@@ -16,6 +16,7 @@ mkdir -p runs/slurm
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
+python -m pip install "eval-type-backport>=0.2,<1"
 python -m pip install -e ".[dev,agents]"
 
 pytest

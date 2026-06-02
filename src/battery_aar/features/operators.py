@@ -8,7 +8,7 @@ import pandas as pd
 from scipy.stats import skew
 
 from battery_aar.features.operator_registry import FeatureOperatorOutput
-from battery_aar.workflows.schemas import FeatureOperatorSpec
+from battery_aar.features.schemas import FeatureOperatorSpec
 
 SIGNAL_ALIASES = {
     "internal_resistance": ["dc_internal_resistance", "internal_resistance", "IR", "resistance"],
