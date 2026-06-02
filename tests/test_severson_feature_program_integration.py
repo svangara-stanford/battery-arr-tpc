@@ -6,7 +6,7 @@ import sys
 import pandas as pd
 
 from battery_aar.features.feature_programs import build_feature_program_table
-from battery_aar.features.program_library import make_minimal_debug_program
+from battery_aar.features.program_library import make_minimal_debug_program, make_scalar_baseline_program
 from battery_aar.features.severson_matr import build_severson_true_life_dataset
 from battery_aar.workflows.role_graph import run_role_workflow
 
@@ -75,6 +75,27 @@ def test_build_battery_feature_program_script_supports_severson_batch(tmp_path):
     table = pd.read_csv(out / "feature_table.csv")
     assert len(table) == 2
     assert "cycle_life" not in table.columns
+
+
+def test_scalar_baseline_feature_program_builds_on_ragged_severson_summary(tmp_path):
+    mat_dir = write_toy_severson_mat_dir(tmp_path, n_files=1, n_cells_per_file=2, ragged_cycles=True)
+    processed = tmp_path / "ragged_processed"
+    build_severson_true_life_dataset(mat_dir=mat_dir, out_dir=processed, first_n_cycles=100)
+    metadata = pd.read_csv(processed / "cell_metadata.csv")
+
+    result = build_feature_program_table(
+        make_scalar_baseline_program(first_n_cycles=100),
+        metadata,
+        raw_root=processed,
+        out_dir=tmp_path / "scalar_baseline",
+    )
+    table = pd.read_csv(result.feature_table_path)
+
+    assert result.n_rows == 2
+    assert result.n_excluded_cells == 0
+    assert result.n_numeric_feature_columns > 0
+    assert "cycle_life" not in table.columns
+    assert any(col.startswith("discharge_capacity") for col in table.columns)
 
 
 def test_role_agent_workflow_trains_on_toy_severson_true_life_dataset(tmp_path):

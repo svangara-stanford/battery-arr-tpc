@@ -6,6 +6,7 @@ import sys
 
 import pandas as pd
 
+import battery_aar.features.severson_matr as severson_matr
 from battery_aar.features.severson_matr import TRUE_LABEL_SOURCE, build_severson_true_life_dataset
 from battery_aar.workflows.role_graph import _label_source_summary
 
@@ -58,6 +59,40 @@ def test_build_severson_true_life_dataset_script(tmp_path):
     card = json.loads((out / "dataset_card.json").read_text())
     assert card["included_cells"] == 1
     assert card["label_source"] == TRUE_LABEL_SOURCE
+
+
+def test_build_severson_true_life_dataset_handles_ragged_cycles(tmp_path):
+    mat_dir = write_toy_severson_mat_dir(tmp_path, n_files=1, n_cells_per_file=1, ragged_cycles=True)
+    out = tmp_path / "ragged_processed"
+
+    card = build_severson_true_life_dataset(mat_dir=mat_dir, out_dir=out, first_n_cycles=100)
+    metadata = pd.read_csv(out / "cell_metadata.csv")
+    labels = pd.read_csv(out / "labels.csv")
+    cycles = pd.read_csv(out / "cycle_summary.csv")
+
+    assert card["included_cells"] == 1
+    assert len(metadata) == 1
+    assert len(labels) == 1
+    assert len(cycles) == 100
+    assert labels.loc[0, "label_source"] == TRUE_LABEL_SOURCE
+
+
+def test_cycle_parse_failure_is_nonfatal_when_summary_and_life_are_valid(tmp_path, monkeypatch):
+    mat_dir = write_toy_severson_mat_dir(tmp_path, n_files=1, n_cells_per_file=1)
+    out = tmp_path / "nonfatal_processed"
+
+    def fail_cycles(*args, **kwargs):
+        raise ValueError("synthetic ragged failure")
+
+    monkeypatch.setattr(severson_matr, "_cycles_interpolated_from_cell", fail_cycles)
+    card = build_severson_true_life_dataset(mat_dir=mat_dir, out_dir=out, first_n_cycles=100)
+    exclusions = pd.read_csv(out / "exclusions.csv")
+
+    assert card["included_cells"] == 1
+    assert card["excluded_cells"] == 0
+    assert card["nonfatal_warning_rows"] >= 1
+    assert exclusions["is_exclusion"].eq(False).any()
+    assert exclusions["reason"].astype(str).str.contains("cycles_parse_failed_nonfatal").any()
 
 
 def test_label_source_summary_distinguishes_true_life_and_oed_pseudolabels():

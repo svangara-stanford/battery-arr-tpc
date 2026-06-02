@@ -228,7 +228,7 @@ def _first_present(mapping: Dict[str, Any], keys: Iterable[str]) -> Tuple[Option
 
 
 def _numeric_scalar(value: Any) -> Optional[float]:
-    arr = np.asarray(value).ravel()
+    arr = _safe_numeric_vector(value)
     if arr.size == 0:
         return None
     try:
@@ -238,9 +238,106 @@ def _numeric_scalar(value: Any) -> Optional[float]:
     return out if np.isfinite(out) else None
 
 
+def _is_sequence_like(value: Any) -> bool:
+    return isinstance(value, (list, tuple, np.ndarray)) and not isinstance(value, (str, bytes))
+
+
+def _sequence_items(value: Any) -> List[Any]:
+    if isinstance(value, np.ndarray):
+        if value.ndim == 0:
+            return [value.item()]
+        return list(value.ravel()) if value.dtype == object else list(value)
+    if isinstance(value, tuple):
+        return list(value)
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
+def _is_ragged_sequence(value: Any) -> bool:
+    if not _is_sequence_like(value):
+        return False
+    if isinstance(value, np.ndarray) and value.dtype != object:
+        return False
+    items = _sequence_items(value)
+    if not items:
+        return False
+    nested_lengths = []
+    has_nested = False
+    for item in items:
+        if isinstance(item, dict):
+            return True
+        if _is_sequence_like(item):
+            has_nested = True
+            try:
+                nested_lengths.append(len(_sequence_items(item)))
+            except Exception:
+                nested_lengths.append(-1)
+    return has_nested and bool(nested_lengths)
+
+
+def _flatten_numeric_leaves(value: Any) -> List[float]:
+    if value is None or isinstance(value, (str, bytes)):
+        return []
+    if isinstance(value, dict):
+        return []
+    if isinstance(value, np.ndarray):
+        if value.dtype != object:
+            try:
+                series = pd.to_numeric(pd.Series(value.ravel()), errors="coerce")
+                return series.to_numpy(float).tolist()
+            except Exception:
+                return []
+        out: List[float] = []
+        for item in value.ravel():
+            out.extend(_flatten_numeric_leaves(item))
+        return out
+    if isinstance(value, (list, tuple)):
+        out = []
+        for item in value:
+            out.extend(_flatten_numeric_leaves(item))
+        return out
+    try:
+        numeric = float(value)
+    except Exception:
+        return []
+    return [numeric]
+
+
+def _safe_numeric_vector(value: Any) -> np.ndarray:
+    if value is None:
+        return np.asarray([], dtype=float)
+    try:
+        if isinstance(value, np.ndarray) and value.dtype != object:
+            return pd.to_numeric(pd.Series(value.ravel()), errors="coerce").to_numpy(float)
+        if not _is_ragged_sequence(value):
+            return pd.to_numeric(pd.Series(np.asarray(value).ravel()), errors="coerce").to_numpy(float)
+    except Exception:
+        pass
+    leaves = _flatten_numeric_leaves(value)
+    if not leaves:
+        return np.asarray([], dtype=float)
+    return pd.to_numeric(pd.Series(leaves), errors="coerce").to_numpy(float)
+
+
+def _flatten_string_leaves(value: Any) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, bytes):
+        return [value.decode("utf-8", errors="replace").lower().strip()]
+    if isinstance(value, str):
+        return [value.lower().strip()]
+    if isinstance(value, dict):
+        return []
+    if isinstance(value, np.ndarray):
+        return [leaf for item in value.ravel() for leaf in _flatten_string_leaves(item)]
+    if isinstance(value, (list, tuple)):
+        return [leaf for item in value for leaf in _flatten_string_leaves(item)]
+    return [str(value).lower().strip()]
+
+
 def _as_numeric_array(value: Any) -> np.ndarray:
-    arr = np.asarray(value).ravel()
-    return pd.to_numeric(pd.Series(arr), errors="coerce").to_numpy(float)
+    return _safe_numeric_vector(value)
 
 
 def _field_array(mapping: Dict[str, Any], aliases: List[str]) -> Tuple[Optional[str], np.ndarray]:
@@ -295,13 +392,48 @@ def _summary_from_cell(cell: Dict[str, Any], first_n_cycles: Optional[int] = Non
 
 
 def _cycle_records_from_mapping(cycles: Dict[str, Any]) -> List[Tuple[int, Dict[str, Any]]]:
-    if "cycle_index" in cycles and any(key in cycles for key in CYCLE_ALIASES["voltage"]):
+    has_curve_field = any(alias in cycles for aliases in CYCLE_ALIASES.values() for alias in aliases)
+    has_ragged_field = any(_is_ragged_sequence(value) for value in cycles.values())
+    if has_curve_field and not has_ragged_field:
         return [(0, cycles)]
+    if has_curve_field and has_ragged_field:
+        per_field_items: Dict[str, List[Any]] = {}
+        lengths: List[int] = []
+        for key, value in cycles.items():
+            if _is_sequence_like(value):
+                items = _sequence_items(value)
+                per_field_items[key] = items
+                if _is_ragged_sequence(value):
+                    lengths.append(len(items))
+        if lengths:
+            n_cycles = Counter(lengths).most_common(1)[0][0]
+            records = []
+            for idx in range(n_cycles):
+                record = {}
+                for key, items in per_field_items.items():
+                    if len(items) == n_cycles:
+                        record[key] = items[idx]
+                    elif len(items) == 1:
+                        record[key] = items[0]
+                records.append((idx, record))
+            return records
     records = []
     for idx, key in enumerate(sorted(cycles, key=lambda value: str(value))):
         value = cycles[key]
         if isinstance(value, dict):
             records.append((idx, value))
+    return records
+
+
+def _cycle_records_from_sequence(cycles: Any) -> List[Tuple[int, Dict[str, Any]]]:
+    records: List[Tuple[int, Dict[str, Any]]] = []
+    for idx, item in enumerate(_sequence_items(cycles)):
+        if isinstance(item, dict):
+            records.append((idx, item))
+        elif _is_sequence_like(item):
+            for nested in _sequence_items(item):
+                if isinstance(nested, dict):
+                    records.append((len(records), nested))
     return records
 
 
@@ -312,16 +444,31 @@ def _infer_step_type(current: np.ndarray, length: int) -> List[str]:
     return [""] * length
 
 
-def _cycles_interpolated_from_cell(cell: Dict[str, Any], first_n_cycles: Optional[int] = None) -> Tuple[Dict[str, Any], List[str]]:
-    warnings: List[str] = []
-    source = cell.get("cycles_interpolated")
-    if isinstance(source, dict):
-        return {str(key): _as_numeric_array(value).tolist() if key != "step_type" else [str(v).lower() for v in np.asarray(value).ravel()] for key, value in source.items()}, warnings
-    cycles = cell.get("cycles")
-    if not isinstance(cycles, (dict, list)):
-        warnings.append("cycles_interpolated/cycles are unavailable")
-        return {}, warnings
-    records = list(enumerate(cycles)) if isinstance(cycles, list) else _cycle_records_from_mapping(cycles)
+def _fit_length(values: Optional[np.ndarray], length: int) -> List[float]:
+    if values is None or values.size == 0:
+        return [np.nan] * length
+    if values.size == length:
+        return values.tolist()
+    if values.size == 1:
+        return [float(values[0])] * length
+    out = np.full(length, np.nan, dtype=float)
+    n = min(length, int(values.size))
+    out[:n] = values[:n]
+    return out.tolist()
+
+
+def _fit_strings(values: List[str], length: int) -> List[str]:
+    if not values:
+        return [""] * length
+    if len(values) == 1:
+        return [values[0]] * length
+    out = [""] * length
+    n = min(length, len(values))
+    out[:n] = values[:n]
+    return out
+
+
+def _records_to_cycles_interpolated(records: List[Tuple[int, Dict[str, Any]]], first_n_cycles: Optional[int]) -> Dict[str, Any]:
     arrays: Dict[str, List[Any]] = defaultdict(list)
     for positional_index, record in records:
         if first_n_cycles is not None and positional_index >= int(first_n_cycles):
@@ -340,24 +487,42 @@ def _cycles_interpolated_from_cell(cell: Dict[str, Any], first_n_cycles: Optiona
         lengths = [arr.size for arr in mapped.values() if arr.size > 0]
         if not lengths:
             continue
-        n = min(lengths)
+        n = max(lengths)
         cycle_index = _numeric_scalar(record.get("cycle_index"))
         if cycle_index is None:
             cycle_index = positional_index
         arrays["cycle_index"].extend([cycle_index] * n)
         for canonical in ["voltage", "test_time", "current", "charge_capacity", "discharge_capacity", "charge_energy", "discharge_energy", "internal_resistance", "temperature"]:
-            values = mapped.get(canonical)
-            arrays[canonical].extend(values[:n].tolist() if values is not None and values.size else [np.nan] * n)
+            arrays[canonical].extend(_fit_length(mapped.get(canonical), n))
         step_key, step_values = _first_present(record, CYCLE_ALIASES["step_type"])
         if step_key is not None:
-            step_arr = np.asarray(step_values).ravel()
-            if step_arr.size == 1:
-                arrays["step_type"].extend([str(step_arr[0]).lower()] * n)
-            else:
-                arrays["step_type"].extend([str(value).lower() for value in step_arr[:n]])
+            arrays["step_type"].extend(_fit_strings(_flatten_string_leaves(step_values), n))
+        elif "current" in mapped:
+            arrays["step_type"].extend(_infer_step_type(np.asarray(_fit_length(mapped.get("current"), n), dtype=float), n))
+        elif "discharge_capacity" in mapped and "charge_capacity" not in mapped:
+            arrays["step_type"].extend(["discharge"] * n)
+        elif "charge_capacity" in mapped and "discharge_capacity" not in mapped:
+            arrays["step_type"].extend(["charge"] * n)
         else:
-            arrays["step_type"].extend(_infer_step_type(mapped.get("current", np.asarray([])), n))
-    return dict(arrays), warnings
+            arrays["step_type"].extend([""] * n)
+    return dict(arrays)
+
+
+def _cycles_interpolated_from_cell(cell: Dict[str, Any], first_n_cycles: Optional[int] = None) -> Tuple[Dict[str, Any], List[str]]:
+    warnings: List[str] = []
+    source = cell.get("cycles_interpolated")
+    if isinstance(source, dict):
+        if any(_is_ragged_sequence(value) for value in source.values()):
+            arrays = _records_to_cycles_interpolated(_cycle_records_from_mapping(source), first_n_cycles)
+            if arrays:
+                return arrays, warnings
+        return {str(key): _safe_numeric_vector(value).tolist() if key != "step_type" else _flatten_string_leaves(value) for key, value in source.items()}, warnings
+    cycles = cell.get("cycles")
+    if not isinstance(cycles, (dict, list, tuple, np.ndarray)):
+        warnings.append("cycles_interpolated/cycles are unavailable")
+        return {}, warnings
+    records = _cycle_records_from_mapping(cycles) if isinstance(cycles, dict) else _cycle_records_from_sequence(cycles)
+    return _records_to_cycles_interpolated(records, first_n_cycles), warnings
 
 
 def severson_cells_from_file(path: Union[str, Path], first_n_cycles: Optional[int] = None) -> Tuple[List[SeversonCell], MatLoadResult]:
@@ -373,8 +538,18 @@ def severson_cells_from_file(path: Union[str, Path], first_n_cycles: Optional[in
             continue
         life_key, life_value = _first_present(cell, LIFE_KEYS)
         cycle_life = _numeric_scalar(life_value)
-        summary, summary_df, summary_warnings = _summary_from_cell(cell, first_n_cycles=first_n_cycles)
-        cycles_interpolated, cycle_warnings = _cycles_interpolated_from_cell(cell, first_n_cycles=first_n_cycles)
+        try:
+            summary, summary_df, summary_warnings = _summary_from_cell(cell, first_n_cycles=first_n_cycles)
+        except Exception as exc:
+            summary, summary_df = {}, pd.DataFrame()
+            summary_warnings = [f"summary_parse_failed: {type(exc).__name__}: {exc}"]
+        try:
+            cycles_interpolated, cycle_warnings = _cycles_interpolated_from_cell(cell, first_n_cycles=first_n_cycles)
+        except Exception as exc:
+            cycles_interpolated = {}
+            cycle_warnings = [f"cycles_parse_failed_nonfatal: {type(exc).__name__}: {exc}"]
+        if not cycles_interpolated:
+            cycle_warnings = list(cycle_warnings) + ["curve_fields_unavailable"]
         barcode = str(cell.get("barcode") or cell.get("cell_id") or cell.get("CellID") or "").strip()
         channel = str(cell.get("channel_id") or cell.get("channel") or "").strip()
         cell_id = f"severson_{source_batch}_cell_{idx:03d}"
@@ -563,11 +738,48 @@ def build_severson_true_life_dataset(
             continue
         for cell in cells:
             if cell.cycle_life is None:
-                exclusions.append({"source_file": cell.source_file, "source_cell_index": cell.source_cell_index, "cell_id": cell.cell_id, "exclusion_stage": "label", "reason": "missing finite true cycle_life"})
+                reason = "missing_cycle_life" if cell.metadata.get("life_key") is None else "invalid_cycle_life"
+                exclusions.append(
+                    {
+                        "source_file": cell.source_file,
+                        "source_cell_index": cell.source_cell_index,
+                        "cell_id": cell.cell_id,
+                        "exclusion_stage": "label",
+                        "reason": reason,
+                        "is_exclusion": True,
+                    }
+                )
                 continue
             if not cell.summary or "discharge_capacity" not in cell.summary:
-                exclusions.append({"source_file": cell.source_file, "source_cell_index": cell.source_cell_index, "cell_id": cell.cell_id, "exclusion_stage": "summary", "reason": "missing discharge_capacity summary"})
+                if any("summary_parse_failed" in warning for warning in cell.warnings):
+                    reason = "summary_parse_failed"
+                elif not cell.summary:
+                    reason = "missing_summary"
+                else:
+                    reason = "missing_summary_discharge_capacity"
+                exclusions.append(
+                    {
+                        "source_file": cell.source_file,
+                        "source_cell_index": cell.source_cell_index,
+                        "cell_id": cell.cell_id,
+                        "exclusion_stage": "summary",
+                        "reason": reason,
+                        "is_exclusion": True,
+                    }
+                )
                 continue
+            for warning in cell.warnings:
+                if "cycles_parse_failed_nonfatal" in warning or "curve_fields_unavailable" in warning:
+                    exclusions.append(
+                        {
+                            "source_file": cell.source_file,
+                            "source_cell_index": cell.source_cell_index,
+                            "cell_id": cell.cell_id,
+                            "exclusion_stage": "warning",
+                            "reason": warning,
+                            "is_exclusion": False,
+                        }
+                    )
             payload = {
                 "source_dataset": SEVERSON_DATASET_NAME,
                 "source_file": cell.source_file,
@@ -631,7 +843,7 @@ def build_severson_true_life_dataset(
     cycle_summary.to_csv(out / "cycle_summary.csv", index=False)
     labels.to_csv(out / "labels.csv", index=False)
     splits.to_csv(out / "splits.csv", index=False)
-    pd.DataFrame(exclusions, columns=["source_file", "source_cell_index", "cell_id", "exclusion_stage", "reason"]).to_csv(out / "exclusions.csv", index=False)
+    pd.DataFrame(exclusions, columns=["source_file", "source_cell_index", "cell_id", "exclusion_stage", "reason", "is_exclusion"]).to_csv(out / "exclusions.csv", index=False)
     life = pd.to_numeric(metadata["cycle_life"], errors="coerce").to_numpy(float)
     field_availability = _field_availability_from_frames(cycle_summary, canonical_payloads)
     card = {
@@ -639,9 +851,10 @@ def build_severson_true_life_dataset(
         "label_source": TRUE_LABEL_SOURCE,
         "label_source_description": "true measured cycle-to-failure labels from Severson/MatR data",
         "first_n_cycles": int(first_n_cycles),
-        "total_cells": int(len(metadata) + len(exclusions)),
+        "total_cells": int(len(metadata) + sum(1 for row in exclusions if row.get("is_exclusion", True))),
         "included_cells": int(len(metadata)),
-        "excluded_cells": int(len(exclusions)),
+        "excluded_cells": int(sum(1 for row in exclusions if row.get("is_exclusion", True))),
+        "nonfatal_warning_rows": int(sum(1 for row in exclusions if not row.get("is_exclusion", True))),
         "cycle_rows": int(len(cycle_summary)),
         "cycle_life_min": float(np.nanmin(life)),
         "cycle_life_mean": float(np.nanmean(life)),

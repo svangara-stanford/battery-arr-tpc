@@ -5,7 +5,14 @@ from pathlib import Path
 from scipy.io import savemat
 
 
-def write_toy_severson_mat_dir(base: Path, *, n_files: int = 2, n_cells_per_file: int = 3, n_cycles: int = 120) -> Path:
+def write_toy_severson_mat_dir(
+    base: Path,
+    *,
+    n_files: int = 2,
+    n_cells_per_file: int = 3,
+    n_cycles: int = 120,
+    ragged_cycles: bool = False,
+) -> Path:
     mat_dir = base / "severson_matr"
     mat_dir.mkdir(parents=True, exist_ok=True)
     file_names = [
@@ -29,7 +36,8 @@ def write_toy_severson_mat_dir(base: Path, *, n_files: int = 2, n_cells_per_file
             }
             cycle_records = []
             for cycle in range(min(12, n_cycles)):
-                frac = np.linspace(0.0, 1.0, 8)
+                n_points = 5 + (cycle % 4) if ragged_cycles else 8
+                frac = np.linspace(0.0, 1.0, n_points)
                 cycle_records.append(
                     {
                         "cycle_index": cycle,
