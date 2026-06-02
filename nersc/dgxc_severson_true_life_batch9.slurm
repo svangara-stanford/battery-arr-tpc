@@ -102,7 +102,7 @@ python scripts/run_role_agent_workflow.py \
   --locked-test \
   --final-batch9-top-k "${FINAL_BATCH9_TOP_K}"
 
-tar -czf "runs/slurm/oba-severson-b9-${SLURM_JOB_ID}-artifacts.tgz" \
+tar -czf "runs/oba-severson-b9-${SLURM_JOB_ID}-artifacts.tgz" \
   reports/severson_matr_audit.md \
   reports/severson_matr_audit.json \
   reports/role_agent_workflow.md \
