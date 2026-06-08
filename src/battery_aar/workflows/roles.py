@@ -57,6 +57,116 @@ def _sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _as_str_or(value: Any, default: str | None) -> str | None:
+    """Coerce malformed LLM payload values into a string or fall back to ``default``.
+
+    Some role-prompted LLM payloads return dicts, lists, or nested JSON when the
+    schema expects a string (e.g. ``feature_program_recipe`` or ``rationale``).
+    This helper flattens such cases instead of letting Pydantic raise.
+    """
+
+    if value is None:
+        return default
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped if stripped else default
+    if isinstance(value, bool):
+        return str(value).lower()
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, (list, tuple, set)):
+        flat = [_as_str_or(v, None) for v in value]
+        flat = [v for v in flat if v]
+        return ", ".join(flat) if flat else default
+    if isinstance(value, dict):
+        try:
+            return json.dumps(value, sort_keys=True, default=str)
+        except Exception:
+            return default
+    return str(value)
+
+
+def _as_int_or(value: Any, default: int | None) -> int | None:
+    """Coerce a malformed LLM payload value to int or fall back to ``default``."""
+
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, int):
+        return int(value)
+    if isinstance(value, float):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return default
+        try:
+            return int(float(text))
+        except (TypeError, ValueError):
+            return default
+    if isinstance(value, dict):
+        for key in ("value", "max_cycle", "n", "count"):
+            if key in value:
+                return _as_int_or(value[key], default)
+        return default
+    return default
+
+
+def _as_str_list(value: Any) -> list[str]:
+    """Coerce a malformed LLM payload value into a list[str], discarding empties."""
+
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if isinstance(value, dict):
+        items = []
+        for v in value.values():
+            items.extend(_as_str_list(v))
+        return items
+    if isinstance(value, (list, tuple, set)):
+        out: list[str] = []
+        for item in value:
+            if item is None:
+                continue
+            if isinstance(item, str):
+                stripped = item.strip()
+                if stripped:
+                    out.append(stripped)
+            elif isinstance(item, (int, float, bool)):
+                out.append(str(item))
+            elif isinstance(item, dict):
+                inner = _as_str_or(item, None)
+                if inner:
+                    out.append(inner)
+            else:
+                out.append(str(item))
+        return out
+    return [str(value)]
+
+
+def _as_dict_or_empty(value: Any) -> dict[str, Any]:
+    """Coerce a malformed LLM payload value into a dict; return ``{}`` on failure."""
+
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return {}
+        try:
+            parsed = json.loads(text)
+            return dict(parsed) if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
 def _call_llm(role_name: str, prompt: str, model: str | None = None) -> str:
     from openai import OpenAI
 
@@ -248,22 +358,23 @@ class FeatureScientist:
                 "FeaturePlan keys: agent_id, feature_families, selected_columns, include_protocol_features, max_cycle, rationale, constraints",
                 model=ctx.model,
             )
+            rationale_text = _as_str_or(payload.get("rationale"), None)
             plan = FeaturePlan(
                 run_id=ctx.run_id,
                 parent_artifact_ids=all_parent_ids,
-                human_readable_summary=str(payload.get("rationale") or "LLM FeatureScientist plan."),
-                agent_id=str(payload.get("agent_id") or "feature_scientist"),
+                human_readable_summary=_as_str_or(rationale_text, "LLM FeatureScientist plan.") or "LLM FeatureScientist plan.",
+                agent_id=_as_str_or(payload.get("agent_id"), "feature_scientist") or "feature_scientist",
                 iteration=iteration,
-                feature_families=list(map(str, payload.get("feature_families", []))),
-                selected_columns=list(map(str, payload.get("selected_columns", []))),
+                feature_families=_as_str_list(payload.get("feature_families", [])),
+                selected_columns=_as_str_list(payload.get("selected_columns", [])),
                 include_protocol_features=bool(payload.get("include_protocol_features", ctx.allow_protocol_features)),
-                feature_program_ids=list(map(str, payload.get("feature_program_ids", []))),
+                feature_program_ids=_as_str_list(payload.get("feature_program_ids", [])),
                 feature_program_paths=list(ctx.feature_program_paths or []),
-                feature_program_recipe=payload.get("feature_program_recipe") or ctx.feature_program_recipe,
-                feature_set=str(payload.get("feature_set") or "all_available"),
-                max_cycle=int(payload.get("max_cycle") or ctx.max_cycle),
-                rationale=payload.get("rationale"),
-                constraints=list(map(str, payload.get("constraints", []))),
+                feature_program_recipe=_as_str_or(payload.get("feature_program_recipe"), ctx.feature_program_recipe),
+                feature_set=_as_str_or(payload.get("feature_set"), "all_available") or "all_available",
+                max_cycle=_as_int_or(payload.get("max_cycle"), ctx.max_cycle),
+                rationale=rationale_text,
+                constraints=_as_str_list(payload.get("constraints", [])),
             )
         path = ctx.store.write_artifact(plan)
         ctx.trace.log_agent_message(
@@ -304,19 +415,20 @@ class ModelArchitect:
                 "ModelPlan keys: agent_id, model_family, estimator_name, target_transform, hyperparameters, preprocessing_steps, rationale",
                 model=ctx.model,
             )
+            rationale_text = _as_str_or(payload.get("rationale"), None)
             plan = ModelPlan(
                 run_id=ctx.run_id,
                 parent_artifact_ids=[feature_plan.artifact_id],
-                human_readable_summary=str(payload.get("rationale") or "LLM ModelArchitect plan."),
-                agent_id=str(payload.get("agent_id") or "model_architect"),
+                human_readable_summary=_as_str_or(rationale_text, "LLM ModelArchitect plan.") or "LLM ModelArchitect plan.",
+                agent_id=_as_str_or(payload.get("agent_id"), "model_architect") or "model_architect",
                 iteration=iteration,
-                model_family=str(payload.get("model_family") or "regularized_regression"),
-                estimator_name=payload.get("estimator_name"),
-                target_transform=str(payload.get("target_transform") or "raw"),
-                feature_set=str(payload.get("feature_set") or "all_available"),
-                hyperparameters=payload.get("hyperparameters") if isinstance(payload.get("hyperparameters"), dict) else {},
-                preprocessing_steps=list(map(str, payload.get("preprocessing_steps", []))),
-                rationale=payload.get("rationale"),
+                model_family=_as_str_or(payload.get("model_family"), "regularized_regression") or "regularized_regression",
+                estimator_name=_as_str_or(payload.get("estimator_name"), None),
+                target_transform=_as_str_or(payload.get("target_transform"), "raw") or "raw",
+                feature_set=_as_str_or(payload.get("feature_set"), "all_available") or "all_available",
+                hyperparameters=_as_dict_or_empty(payload.get("hyperparameters")),
+                preprocessing_steps=_as_str_list(payload.get("preprocessing_steps", [])),
+                rationale=rationale_text,
             )
         ctx.store.write_artifact(plan)
         ctx.trace.log_agent_message(
@@ -695,12 +807,12 @@ class ScientistCritic:
                 run_id=ctx.run_id,
                 parent_artifact_ids=[review.artifact_id, evaluation.artifact_id],
                 human_readable_summary="ScientistCritic produced a critique report.",
-                critic_id=str(payload.get("critic_id") or "scientist_critic"),
+                critic_id=_as_str_or(payload.get("critic_id"), "scientist_critic") or "scientist_critic",
                 iteration=iteration,
                 target_artifact_ids=[review.artifact_id, evaluation.artifact_id],
-                strengths=list(map(str, payload.get("strengths", []))),
-                weaknesses=list(map(str, payload.get("weaknesses", []))),
-                proposed_next_steps=list(map(str, payload.get("proposed_next_steps", []))),
+                strengths=_as_str_list(payload.get("strengths", [])),
+                weaknesses=_as_str_list(payload.get("weaknesses", [])),
+                proposed_next_steps=_as_str_list(payload.get("proposed_next_steps", [])),
             )
         ctx.store.write_artifact(report)
         ctx.trace.log_agent_message(

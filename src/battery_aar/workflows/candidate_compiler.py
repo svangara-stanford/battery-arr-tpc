@@ -56,43 +56,101 @@ def normalize_model_family(model_family: str | None, estimator_name: str | None 
     return family
 
 
+def _collapse(text: str) -> str:
+    return re.sub(r"[\s\-]+", "_", text.strip().lower())
+
+
 def normalize_target_transform(value: str | None) -> str:
-    text = str(value or "raw").strip().lower()
+    raw_text = str(value or "raw")
+    text = _collapse(raw_text)
     aliases = {
         "": "raw",
         "none": "raw",
+        "null": "raw",
         "identity": "raw",
         "linear": "raw",
         "raw": "raw",
+        "untransformed": "raw",
+        "no_transform": "raw",
+        "no_transformation": "raw",
+        "cycle_life": "raw",
+        "cyclelife": "raw",
+        "y": "raw",
+        "target": "raw",
         "log": "log10",
         "log10": "log10",
+        "log_10": "log10",
+        "log_target": "log10",
+        "log10_target": "log10",
         "log10_cycle_life": "log10",
+        "log10cyclelife": "log10",
+        "log_cycle_life": "log10",
+        "log_y": "log10",
+        "log_transform": "log10",
+        "logtransform": "log10",
+        "log_transformed": "log10",
     }
     normalized = aliases.get(text, text)
     if normalized not in SUPPORTED_TARGET_TRANSFORMS:
-        raise ValueError(f"Unsupported target_transform={value!r}; expected one of {sorted(SUPPORTED_TARGET_TRANSFORMS)}")
+        # Fail soft to "raw" for unknown wording during Track A discovery.
+        return "raw"
     return normalized
 
 
 def normalize_feature_set(value: str | None) -> str:
-    text = str(value or "all_available").strip().lower()
+    raw_text = str(value or "all_available")
+    text = _collapse(raw_text)
     aliases = {
+        "": "all_available",
+        "none": "all_available",
+        "null": "all_available",
+        "default": "all_available",
         "all": "all_available",
+        "all_features": "all_available",
         "all_available": "all_available",
+        "all_available_features": "all_available",
+        "everything": "all_available",
+        "full": "all_available",
         "scalar": "scalar_only",
+        "scalars": "scalar_only",
         "scalar_only": "scalar_only",
+        "scalaronly": "scalar_only",
+        "scalar_features": "scalar_only",
+        "scalar_features_only": "scalar_only",
+        "summary": "scalar_only",
+        "summary_only": "scalar_only",
         "curve": "curve_only",
+        "curves": "curve_only",
         "curve_only": "curve_only",
+        "curveonly": "curve_only",
+        "curve_features": "curve_only",
+        "curve_shape": "curve_only",
+        "curve_shape_only": "curve_only",
         "scalar_curve": "scalar_plus_curve",
+        "scalar_and_curve": "scalar_plus_curve",
+        "scalars_and_curves": "scalar_plus_curve",
         "scalar_plus_curve": "scalar_plus_curve",
+        "scalarpluscurve": "scalar_plus_curve",
+        "scalar_curves": "scalar_plus_curve",
         "broad": "broad_physics",
         "broad_physics": "broad_physics",
+        "broadphysics": "broad_physics",
+        "physics": "broad_physics",
+        "physics_aware": "broad_physics",
+        "physicsaware": "broad_physics",
+        "physics_based": "broad_physics",
+        "physics_features": "broad_physics",
         "protocol": "protocol_only",
+        "protocols": "protocol_only",
         "protocol_only": "protocol_only",
+        "protocol_features": "protocol_only",
+        "protocol_features_only": "protocol_only",
     }
     normalized = aliases.get(text, text)
     if normalized not in SUPPORTED_FEATURE_SETS:
-        raise ValueError(f"Unsupported feature_set={value!r}; expected one of {sorted(SUPPORTED_FEATURE_SETS)}")
+        # Fail soft to all_available during Track A so unfamiliar LLM wording
+        # does not crash the entire workflow.
+        return "all_available"
     return normalized
 
 
