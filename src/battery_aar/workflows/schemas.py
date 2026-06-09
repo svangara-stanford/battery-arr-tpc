@@ -224,6 +224,29 @@ class ExperimentState(ArtifactBase):
     output_paths: Dict[str, str] = Field(default_factory=dict)
 
 
+class ChampionShortlist(ArtifactBase):
+    artifact_type: Literal["ChampionShortlist"] = "ChampionShortlist"
+    agent_id: str
+    agent_role: AgentRole = AgentRole.CRITIC
+    iteration: Optional[int] = None
+    k: int
+    selection_criteria: str
+    rationale: Optional[str] = None
+    shortlist: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class ChampionDecision(ArtifactBase):
+    artifact_type: Literal["ChampionDecision"] = "ChampionDecision"
+    agent_id: str
+    agent_role: AgentRole = AgentRole.CRITIC
+    iteration: Optional[int] = None
+    selection_criteria: str
+    rationale: Optional[str] = None
+    final_champion: Dict[str, Any] = Field(default_factory=dict)
+    runner_up: Optional[Dict[str, Any]] = None
+    shortlist_evaluated: List[Dict[str, Any]] = Field(default_factory=list)
+
+
 ArtifactModel = Union[
     RunManifest,
     DatasetProfileArtifact,
@@ -238,4 +261,6 @@ ArtifactModel = Union[
     CritiqueReport,
     ToolCallRecord,
     ExperimentState,
+    ChampionShortlist,
+    ChampionDecision,
 ]

@@ -21,6 +21,16 @@ ROLE_SYSTEM_PROMPTS = {
         "You are the ScientistCritic in Open Battery Agents. Return only JSON matching the requested schema. "
         "Critique the completed experiment without using hidden data that was not shown."
     ),
+    "ChampionAggregator": (
+        "You are the ChampionAggregator in Open Battery Agents. Return only JSON matching the requested schema. "
+        "You see ONLY Severson-only validation evidence across all completed Track A runs. You must NOT request, infer, or claim access to Batch 9 results -- Batch 9 is sealed at this stage. "
+        "Your task is to nominate a top-K shortlist of candidate configurations that best satisfy the stated selection criteria, with explicit reasoning. Prefer cross-seed and cross-split-mode stability over any single low-RMSE outlier."
+    ),
+    "ChampionAdjudicator": (
+        "You are the ChampionAdjudicator in Open Battery Agents. Return only JSON matching the requested schema. "
+        "You see Severson-only AND Batch 9 metrics for a small fixed shortlist (K candidates). Your task is to pick the single final champion and a runner-up using the stated tie-breaking rule, with a one-paragraph rationale. "
+        "Default rule: choose the shortlist entry with the lowest Batch 9 RMSE, UNLESS one of them shows clear pathology (gross prediction collapse, negative R2, many non-finite predictions, batch9_rmse >> weak baseline RMSE), in which case skip the pathological entry. State which candidate you skipped and why."
+    ),
 }
 
 
@@ -171,6 +181,84 @@ Evaluation:
 
 Return JSON with keys:
 critic_id, strengths, weaknesses, proposed_next_steps
+"""
+
+
+def champion_aggregator_prompt(
+    severson_summary: dict[str, Any],
+    k: int,
+    selection_criteria: str,
+) -> str:
+    return f"""Nominate a Severson-only top-{k} shortlist of candidate configurations from the completed Track A campaign.
+
+Batch 9 is SEALED at this stage. You must not request, infer, or claim access to Batch 9 metrics, predictions, or any held-out labels. Use only the Severson-only validation evidence supplied below.
+
+Selection criteria:
+{selection_criteria}
+
+Reasoning guidance:
+- Prefer candidates whose Severson-only metrics are stable across seeds and split modes; a single low-RMSE outlier is not evidence of generalization.
+- Prefer small-data sensible model choices (regularized linear, tree ensembles with sane defaults) when ranks are close; avoid over-parameterized configurations on tiny training partitions.
+- Do not favor any paper-specific feature family or coefficient set. Reason from the supplied Severson metrics and configuration metadata only.
+- If many candidates are statistically tied on RMSE, break ties using MAE and Spearman, then by configuration simplicity.
+
+Severson-only campaign summary:
+{_json_block(severson_summary)}
+
+Return JSON with these top-level keys:
+- agent_id (string)
+- k (int, must equal {k})
+- selection_criteria (string, restate the criteria you applied)
+- rationale (string, one short paragraph explaining the shortlist as a whole)
+- shortlist (list of exactly {k} entries, ordered best-first)
+
+Each entry in `shortlist` MUST contain these keys:
+- candidate_id (string)
+- source_run_id (string)
+- candidate_path (string)
+- feature_program_path (string or null)
+- processed_dir (string)
+- recipe (string)
+- split_mode (string)
+- split_seed (int)
+- model_family (string)
+- feature_set (string)
+- target_transform (string)
+- surrogate_rmse (float)
+- surrogate_mae (float)
+- surrogate_spearman (float)
+- rank_in_shortlist (int, 1-based, matching the entry's position)
+"""
+
+
+def champion_adjudicator_prompt(
+    shortlist_with_batch9: dict[str, Any],
+    selection_criteria: str,
+) -> str:
+    return f"""Pick the single final champion and a runner-up from the fixed shortlist below. No further iteration is allowed. Do not request additional Batch 9 evaluations -- the Batch 9 metrics already attached to each entry are final.
+
+Selection criteria:
+{selection_criteria}
+
+Default tie-breaking rule: choose the shortlist entry with the lowest `batch9_rmse`, UNLESS that entry shows clear pathology. Pathology checks (skip any entry exhibiting one or more):
+- gross prediction collapse (predictions near-constant or with vanishing variance)
+- negative `batch9_r2`
+- many non-finite predictions (`batch9_n_nonfinite_predictions` materially > 0)
+- many negative predictions for a non-negative lifetime target (`batch9_n_negative_predictions` materially > 0)
+- `batch9_rmse` much worse than the weak baseline (`batch9_rmse` >> `batch9_weak_baseline_rmse`)
+
+If you skip an entry for pathology, name the entry and the failing check in your rationale.
+
+Shortlist with Batch 9 metrics:
+{_json_block(shortlist_with_batch9)}
+
+Return JSON with these top-level keys:
+- agent_id (string)
+- selection_criteria (string, restate the rule you applied)
+- rationale (string, one short paragraph explaining the choice and any pathology skips)
+- final_champion (object, the chosen shortlist entry with ALL of its original fields PLUS batch9_rmse, batch9_mae, batch9_spearman, batch9_pgr; must include candidate_id and source_run_id)
+- runner_up (object or null, same shape as final_champion; null only if no non-pathological alternative remains)
+- shortlist_evaluated (list, the full shortlist as received, preserved verbatim for audit)
 """
 
 

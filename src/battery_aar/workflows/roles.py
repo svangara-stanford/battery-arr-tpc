@@ -14,6 +14,8 @@ from battery_aar.workflows.artifacts import ArtifactStore
 from battery_aar.workflows.candidate_compiler import candidate_spec_from_plans, compile_candidate_spec_to_python
 from battery_aar.workflows.role_prompts import (
     ROLE_SYSTEM_PROMPTS,
+    champion_adjudicator_prompt,
+    champion_aggregator_prompt,
     code_generator_prompt,
     code_repair_prompt,
     feature_scientist_prompt,
@@ -21,7 +23,17 @@ from battery_aar.workflows.role_prompts import (
     schema_repair_prompt,
     scientist_critic_prompt,
 )
-from battery_aar.workflows.schemas import AgentRole, CandidateSpec, CritiqueReport, EvaluationReport, FeaturePlan, ModelPlan, ReviewReport
+from battery_aar.workflows.schemas import (
+    AgentRole,
+    CandidateSpec,
+    ChampionDecision,
+    ChampionShortlist,
+    CritiqueReport,
+    EvaluationReport,
+    FeaturePlan,
+    ModelPlan,
+    ReviewReport,
+)
 from battery_aar.workflows.trace import TraceLogger
 
 
@@ -825,6 +837,290 @@ class ScientistCritic:
             message_summary=report.human_readable_summary,
         )
         return report
+
+
+_SHORTLIST_REQUIRED_KEYS: tuple[str, ...] = (
+    "candidate_id",
+    "source_run_id",
+    "candidate_path",
+    "feature_program_path",
+    "processed_dir",
+    "recipe",
+    "split_mode",
+    "split_seed",
+    "model_family",
+    "feature_set",
+    "target_transform",
+    "surrogate_rmse",
+    "surrogate_mae",
+    "surrogate_spearman",
+    "rank_in_shortlist",
+)
+
+
+def _coerce_shortlist_entry(raw: Any, rank_hint: int) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    entry: dict[str, Any] = dict(raw)
+    for key in _SHORTLIST_REQUIRED_KEYS:
+        if key not in entry:
+            if key == "feature_program_path":
+                entry[key] = None
+            elif key == "rank_in_shortlist":
+                entry[key] = rank_hint
+            else:
+                return None
+    if not isinstance(entry.get("candidate_id"), str) or not entry["candidate_id"].strip():
+        return None
+    if not isinstance(entry.get("source_run_id"), str) or not entry["source_run_id"].strip():
+        return None
+    coerced_rank = _as_int_or(entry.get("rank_in_shortlist"), rank_hint)
+    entry["rank_in_shortlist"] = coerced_rank if coerced_rank is not None else rank_hint
+    coerced_seed = _as_int_or(entry.get("split_seed"), None)
+    if coerced_seed is None:
+        return None
+    entry["split_seed"] = coerced_seed
+    for metric_key in ("surrogate_rmse", "surrogate_mae", "surrogate_spearman"):
+        value = entry.get(metric_key)
+        if value is None:
+            return None
+        try:
+            entry[metric_key] = float(value)
+        except (TypeError, ValueError):
+            return None
+    return entry
+
+
+class ChampionAggregator:
+    role_name = "ChampionAggregator"
+
+    def run(
+        self,
+        ctx: RoleContext,
+        severson_summary: dict[str, Any],
+        k: int,
+        selection_criteria: str,
+        parent_artifact_ids: list[str] | None = None,
+    ) -> ChampionShortlist:
+        parent_ids = list(parent_artifact_ids or [])
+        if int(k) <= 0:
+            raise ValueError("ChampionAggregator requires k > 0")
+        if ctx.offline:
+            eligible = severson_summary.get("top_eligible_configs") or []
+            if not isinstance(eligible, list):
+                eligible = []
+            scored: list[tuple[float, dict[str, Any]]] = []
+            for raw in eligible:
+                if not isinstance(raw, dict):
+                    continue
+                rmse_value = raw.get("surrogate_rmse")
+                try:
+                    rmse_float = float(rmse_value)
+                except (TypeError, ValueError):
+                    continue
+                scored.append((rmse_float, raw))
+            scored.sort(key=lambda item: item[0])
+            shortlist: list[dict[str, Any]] = []
+            for rank_idx, (_, raw) in enumerate(scored, start=1):
+                entry = _coerce_shortlist_entry({**raw, "rank_in_shortlist": rank_idx}, rank_idx)
+                if entry is None:
+                    continue
+                shortlist.append(entry)
+                if len(shortlist) >= int(k):
+                    break
+            if len(shortlist) < int(k):
+                raise RuntimeError(
+                    f"ChampionAggregator offline fallback could not assemble {k} valid entries "
+                    f"from top_eligible_configs (got {len(shortlist)})."
+                )
+            selection_criteria_used = "offline deterministic argmin(surrogate_rmse)"
+            rationale_text = (
+                f"Offline deterministic fallback selected the top {k} candidates by surrogate_rmse."
+            )
+            agent_id = "champion_aggregator"
+        else:
+            schema_hint = (
+                "ChampionShortlist keys: agent_id, k, selection_criteria, rationale, "
+                "shortlist (list of dicts with candidate_id, source_run_id, candidate_path, "
+                "feature_program_path, processed_dir, recipe, split_mode, split_seed, "
+                "model_family, feature_set, target_transform, surrogate_rmse, surrogate_mae, "
+                "surrogate_spearman, rank_in_shortlist)"
+            )
+            payload = _llm_json(
+                self.role_name,
+                champion_aggregator_prompt(severson_summary, int(k), selection_criteria),
+                schema_hint,
+                model=ctx.model,
+            )
+            raw_shortlist = payload.get("shortlist", [])
+            if not isinstance(raw_shortlist, list):
+                raw_shortlist = []
+            shortlist = []
+            for rank_idx, raw in enumerate(raw_shortlist, start=1):
+                entry = _coerce_shortlist_entry(raw, rank_idx)
+                if entry is None:
+                    ctx.trace.log_event(
+                        event_type="champion_shortlist_entry_dropped",
+                        agent_role=AgentRole.CRITIC,
+                        success=False,
+                        error_type="invalid_shortlist_entry",
+                        error_message=f"Dropped shortlist entry at position {rank_idx}: missing or malformed required keys.",
+                    )
+                    continue
+                shortlist.append(entry)
+            if len(shortlist) > int(k):
+                shortlist = shortlist[: int(k)]
+            if len(shortlist) < int(k):
+                raise RuntimeError(
+                    f"ChampionAggregator returned only {len(shortlist)} valid entries; expected {k}."
+                )
+            selection_criteria_used = _as_str_or(payload.get("selection_criteria"), selection_criteria) or selection_criteria
+            rationale_text = _as_str_or(payload.get("rationale"), None) or ""
+            agent_id = _as_str_or(payload.get("agent_id"), "champion_aggregator") or "champion_aggregator"
+
+        artifact = ChampionShortlist(
+            run_id=ctx.run_id,
+            parent_artifact_ids=parent_ids,
+            human_readable_summary=(
+                rationale_text
+                if rationale_text
+                else f"ChampionAggregator produced a top-{k} Severson-only shortlist."
+            ),
+            agent_id=agent_id,
+            iteration=None,
+            k=int(k),
+            selection_criteria=selection_criteria_used,
+            rationale=rationale_text or None,
+            shortlist=shortlist,
+        )
+        ctx.store.write_artifact(artifact)
+        ctx.trace.log_agent_message(
+            event_type="champion_shortlist_created",
+            iteration=None,
+            agent_role=AgentRole.CRITIC,
+            agent_id=artifact.agent_id,
+            input_artifact_ids=parent_ids,
+            output_artifact_ids=[artifact.artifact_id],
+            message_summary=f"Severson-only top-{k} shortlist with {len(shortlist)} entries.",
+        )
+        return artifact
+
+
+class ChampionAdjudicator:
+    role_name = "ChampionAdjudicator"
+
+    def run(
+        self,
+        ctx: RoleContext,
+        shortlist_with_batch9: dict[str, Any],
+        selection_criteria: str,
+        parent_artifact_ids: list[str] | None = None,
+    ) -> ChampionDecision:
+        parent_ids = list(parent_artifact_ids or [])
+        raw_input_shortlist = shortlist_with_batch9.get("shortlist", [])
+        if not isinstance(raw_input_shortlist, list):
+            raw_input_shortlist = []
+        input_shortlist: list[dict[str, Any]] = [dict(item) for item in raw_input_shortlist if isinstance(item, dict)]
+
+        if ctx.offline:
+            scored: list[tuple[float, dict[str, Any]]] = []
+            for entry in input_shortlist:
+                value = entry.get("batch9_rmse")
+                try:
+                    rmse_float = float(value)
+                except (TypeError, ValueError):
+                    continue
+                scored.append((rmse_float, entry))
+            scored.sort(key=lambda item: item[0])
+            if not scored:
+                raise RuntimeError(
+                    "ChampionAdjudicator offline fallback found no shortlist entry with a numeric batch9_rmse."
+                )
+            final_champion = dict(scored[0][1])
+            runner_up = dict(scored[1][1]) if len(scored) > 1 else None
+            selection_criteria_used = "offline deterministic argmin(batch9_rmse)"
+            rationale_text = (
+                "Offline deterministic fallback selected the shortlist entry with the lowest batch9_rmse; "
+                "runner_up is the second-best."
+            )
+            agent_id = "champion_adjudicator"
+            shortlist_evaluated = input_shortlist
+        else:
+            schema_hint = (
+                "ChampionDecision keys: agent_id, selection_criteria, rationale, "
+                "final_champion (dict with at least candidate_id and source_run_id, plus batch9_rmse, batch9_mae, batch9_spearman, batch9_pgr), "
+                "runner_up (same shape or null), shortlist_evaluated (list of dicts)"
+            )
+            payload = _llm_json(
+                self.role_name,
+                champion_adjudicator_prompt(shortlist_with_batch9, selection_criteria),
+                schema_hint,
+                model=ctx.model,
+            )
+            raw_final = payload.get("final_champion")
+            if not isinstance(raw_final, dict):
+                raise RuntimeError("ChampionAdjudicator did not return a final_champion object.")
+            final_champion = dict(raw_final)
+            final_candidate_id = final_champion.get("candidate_id")
+            final_source_run_id = final_champion.get("source_run_id")
+            if not isinstance(final_candidate_id, str) or not final_candidate_id.strip():
+                raise RuntimeError("ChampionAdjudicator final_champion missing candidate_id.")
+            if not isinstance(final_source_run_id, str) or not final_source_run_id.strip():
+                raise RuntimeError("ChampionAdjudicator final_champion missing source_run_id.")
+
+            raw_runner_up = payload.get("runner_up")
+            if isinstance(raw_runner_up, dict) and raw_runner_up:
+                runner_up = dict(raw_runner_up)
+            else:
+                runner_up = None
+                if raw_runner_up not in (None, {}, ""):
+                    ctx.trace.log_event(
+                        event_type="champion_decision_runner_up_dropped",
+                        agent_role=AgentRole.CRITIC,
+                        success=False,
+                        error_type="invalid_runner_up",
+                        error_message="runner_up was present but malformed; coerced to None.",
+                    )
+
+            raw_evaluated = payload.get("shortlist_evaluated", [])
+            if isinstance(raw_evaluated, list) and raw_evaluated:
+                shortlist_evaluated = [dict(item) for item in raw_evaluated if isinstance(item, dict)]
+            else:
+                shortlist_evaluated = input_shortlist
+            selection_criteria_used = _as_str_or(payload.get("selection_criteria"), selection_criteria) or selection_criteria
+            rationale_text = _as_str_or(payload.get("rationale"), None) or ""
+            agent_id = _as_str_or(payload.get("agent_id"), "champion_adjudicator") or "champion_adjudicator"
+
+        artifact = ChampionDecision(
+            run_id=ctx.run_id,
+            parent_artifact_ids=parent_ids,
+            human_readable_summary=(
+                rationale_text
+                if rationale_text
+                else f"ChampionAdjudicator selected final champion {final_champion.get('candidate_id')}."
+            ),
+            agent_id=agent_id,
+            iteration=None,
+            selection_criteria=selection_criteria_used,
+            rationale=rationale_text or None,
+            final_champion=final_champion,
+            runner_up=runner_up,
+            shortlist_evaluated=shortlist_evaluated,
+        )
+        ctx.store.write_artifact(artifact)
+        ctx.trace.log_agent_message(
+            event_type="champion_decision_created",
+            iteration=None,
+            agent_role=AgentRole.CRITIC,
+            agent_id=artifact.agent_id,
+            input_artifact_ids=parent_ids,
+            output_artifact_ids=[artifact.artifact_id],
+            message_summary=(
+                f"Final champion candidate_id={final_champion.get('candidate_id')} "
+                f"source_run_id={final_champion.get('source_run_id')}."
+            ),
+        )
+        return artifact
 
 
 ROLE_SEQUENCE = [

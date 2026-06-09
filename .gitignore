@@ -2,3 +2,4 @@ literature_models_and_data/
 runs/
 .env
 dgx_artifacts/
+.claude/
