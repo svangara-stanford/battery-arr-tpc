@@ -1,5 +1,27 @@
+# --- Large datasets (see SETUP.md for how to obtain these) ---
 literature_models_and_data/
-runs/
+
+# --- Secrets / local config ---
 .env
+
+# --- Generated outputs / artifacts ---
+runs/
 dgx_artifacts/
+logs/
+
+# --- Editor / OS / agent cruft ---
 .claude/
+.DS_Store
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
