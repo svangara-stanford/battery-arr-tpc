@@ -676,13 +676,15 @@ def evaluate_candidate(request: CandidateEvaluateRequest) -> CandidateEvaluateRe
             r2=metrics.get("r2"),
             spearman=metrics.get("spearman"),
             kendall=metrics.get("kendall"),
+            mape=metrics.get("mape"),
+            test_error_pct=metrics.get("test_error_pct"),
             pgr=metrics.get("pgr_author_model"),
             failure_reason=result.get("failure_reason") or result.get("error"),
             traceback=result.get("traceback"),
             stdout_excerpt=(result.get("stdout") or "")[:2000],
             stderr_excerpt=(result.get("stderr") or "")[:2000],
             prediction_path=str(prediction_path) if prediction_path else None,
-            extra_metrics={k: v for k, v in metrics.items() if k not in {"rmse", "mae", "r2", "spearman", "kendall", "pgr_author_model"}},
+            extra_metrics={k: v for k, v in metrics.items() if k not in {"rmse", "mae", "r2", "spearman", "kendall", "mape", "test_error_pct", "pgr_author_model"}},
         )
         path = store.write_artifact(artifact, "tool_outputs/evaluation_report.json")
         output_paths = {"evaluation_report": str(path)}

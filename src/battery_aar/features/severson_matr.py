@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import gzip
 import json
+import re
+import warnings as _pywarnings
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 
 import h5py
 import numpy as np
@@ -15,6 +17,27 @@ from scipy.io import loadmat
 
 SEVERSON_DATASET_NAME = "severson_2019_true_life"
 TRUE_LABEL_SOURCE = "true_measured_cycle_life"
+
+
+# Canonical Severson 2019 MATR batch identifiers (YYYY-MM-DD prefixes of the
+# source .mat files). b1 + b2 are mixed across train/primary_test; b3 is the
+# entire secondary_test split. See BatteryML's MATRPrimaryTestTrainTestSplitter.
+SEVERSON_B1_DATE = "2017-05-12"
+SEVERSON_B2_DATE = "2017-06-30"
+SEVERSON_B3_DATE = "2018-04-12"
+SEVERSON_B12_DATES = frozenset({SEVERSON_B1_DATE, SEVERSON_B2_DATE})
+
+# Train fraction for the canonical split: 41 / (41 + 43) ~= 0.488.
+SEVERSON_CANONICAL_TRAIN_FRACTION = 0.488
+
+# Default seed for the canonical shuffle. Override via the CLI / function arg.
+SEVERSON_CANONICAL_SEED_DEFAULT = 0
+
+# Maximum absolute gap (cycles) between train- and primary-test mean cycle life
+# before we warn about a pathologically imbalanced shuffle.
+SEVERSON_SPLIT_BALANCE_TOLERANCE = 200.0
+
+_DATE_PREFIX_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})")
 
 
 SUMMARY_ALIASES = {
@@ -1034,22 +1057,196 @@ def _write_dataset_card_md(card: Dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _extract_batch_date(source_batch: str) -> Optional[str]:
+    """Extract the YYYY-MM-DD prefix from a Severson source_batch string."""
+
+    if not source_batch:
+        return None
+    match = _DATE_PREFIX_RE.match(str(source_batch))
+    return match.group(1) if match else None
+
+
+def _load_canonical_exclusions(path: Optional[Union[str, Path]]) -> Tuple[Set[str], List[str]]:
+    """Load a plaintext exclusion list (one cell_id per line; '#' = comment).
+
+    Returns the set of cell_ids to drop and the list of comment lines (so we
+    can preserve provenance in the dataset card).
+    """
+
+    if path is None:
+        return set(), []
+    exclusion_path = Path(path)
+    if not exclusion_path.exists():
+        return set(), []
+    ids: Set[str] = set()
+    comments: List[str] = []
+    for raw in exclusion_path.read_text().splitlines():
+        stripped = raw.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("#"):
+            comments.append(stripped.lstrip("#").strip())
+            continue
+        ids.add(stripped)
+    return ids, comments
+
+
+def _canonical_severson_splits(
+    metadata: pd.DataFrame,
+    *,
+    seed: int,
+    train_fraction: float = SEVERSON_CANONICAL_TRAIN_FRACTION,
+) -> Tuple[pd.Series, Dict[str, Any]]:
+    """Compute canonical Severson 2019 train / primary_test / secondary_test splits.
+
+    - b3 cells -> secondary_test.
+    - b1 + b2 cells -> deterministically shuffled by cell_id; first
+      ``train_fraction`` (default 0.488 ~= 41/84) -> train, rest -> primary_test.
+
+    Returns a Series indexed like ``metadata`` and a diagnostic mapping.
+    """
+
+    rng = np.random.default_rng(int(seed))
+    splits = pd.Series(index=metadata.index, dtype=object)
+
+    batch_dates = metadata["source_batch"].astype(str).map(_extract_batch_date)
+    is_b3 = batch_dates.eq(SEVERSON_B3_DATE)
+    is_b12 = batch_dates.isin(SEVERSON_B12_DATES)
+    unknown_mask = ~(is_b3 | is_b12)
+
+    splits.loc[is_b3] = "secondary_test"
+
+    b12_ids = sorted(metadata.loc[is_b12, "cell_id"].astype(str).tolist())
+    rng.shuffle(b12_ids)
+    n_train = int(round(len(b12_ids) * float(train_fraction)))
+    n_train = max(0, min(n_train, len(b12_ids)))
+    train_ids = set(b12_ids[:n_train])
+    primary_ids = set(b12_ids[n_train:])
+
+    cell_ids = metadata["cell_id"].astype(str)
+    splits.loc[is_b12 & cell_ids.isin(train_ids)] = "train"
+    splits.loc[is_b12 & cell_ids.isin(primary_ids)] = "primary_test"
+
+    # Cells whose source_batch date doesn't match any of b1/b2/b3 (e.g. an
+    # unexpected file). Don't silently drop them: route to primary_test so they
+    # remain visible downstream, and report them in diagnostics.
+    unknown_ids: List[str] = []
+    if unknown_mask.any():
+        unknown_ids = metadata.loc[unknown_mask, "cell_id"].astype(str).tolist()
+        splits.loc[unknown_mask] = "primary_test"
+
+    diagnostics = {
+        "seed": int(seed),
+        "train_fraction": float(train_fraction),
+        "n_b12_cells": int(is_b12.sum()),
+        "n_b3_cells": int(is_b3.sum()),
+        "n_unknown_batch_cells": int(unknown_mask.sum()),
+        "unknown_batch_cell_ids": unknown_ids,
+    }
+    return splits, diagnostics
+
+
+def _cycle_life_split_balance(
+    metadata: pd.DataFrame,
+    splits: pd.Series,
+    *,
+    tolerance: float = SEVERSON_SPLIT_BALANCE_TOLERANCE,
+) -> Dict[str, Any]:
+    """Mean cycle life per split + a warning if train/primary diverge too far."""
+
+    life = pd.to_numeric(metadata["cycle_life"], errors="coerce")
+    means: Dict[str, Optional[float]] = {}
+    counts: Dict[str, int] = {}
+    for split_name in ("train", "primary_test", "secondary_test"):
+        mask = splits.eq(split_name)
+        counts[split_name] = int(mask.sum())
+        if mask.any():
+            value = float(life[mask].mean())
+            means[split_name] = value if np.isfinite(value) else None
+        else:
+            means[split_name] = None
+    train_mean = means.get("train")
+    primary_mean = means.get("primary_test")
+    delta: Optional[float] = None
+    balanced = True
+    if train_mean is not None and primary_mean is not None:
+        delta = float(abs(train_mean - primary_mean))
+        balanced = delta <= float(tolerance)
+        if not balanced:
+            _pywarnings.warn(
+                "Severson canonical split: train mean cycle life "
+                f"({train_mean:.1f}) differs from primary_test mean "
+                f"({primary_mean:.1f}) by {delta:.1f} cycles, exceeding "
+                f"tolerance of {tolerance:.1f}. Consider another --seed.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+    return {
+        "means": means,
+        "counts": counts,
+        "train_primary_abs_delta": delta,
+        "balance_tolerance": float(tolerance),
+        "balanced": balanced,
+    }
+
+
+def _legacy_split_map(source_files: List[str]) -> Dict[str, str]:
+    """Reproduce the historical source-file-identity split (b1->train, ...).
+
+    Used for both ``split_mode='source_file_identity'`` and the ``split_legacy``
+    column on canonical-mode runs.
+    """
+
+    if not source_files:
+        return {}
+    if len(source_files) == 1:
+        return {source_files[0]: "train"}
+    if len(source_files) == 2:
+        return {source_files[0]: "train", source_files[1]: "validation"}
+    split_map = {source_files[0]: "train", source_files[1]: "validation"}
+    for source in source_files[2:]:
+        split_map[source] = "test"
+    return split_map
+
+
 def build_severson_true_life_dataset(
     *,
     mat_dir: Union[str, Path],
     out_dir: Union[str, Path],
     first_n_cycles: int = 100,
+    split_mode: str = "canonical_severson",
+    split_seed: int = SEVERSON_CANONICAL_SEED_DEFAULT,
+    exclusion_cell_ids: Optional[Union[str, Path, Iterable[str]]] = None,
 ) -> Dict[str, Any]:
+    if split_mode not in {"canonical_severson", "source_file_identity"}:
+        raise ValueError(
+            f"unknown split_mode={split_mode!r}; "
+            "expected 'canonical_severson' or 'source_file_identity'"
+        )
+
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     canonical_dir = out / "canonical_raw_cells"
     canonical_dir.mkdir(parents=True, exist_ok=True)
+
+    # Resolve canonical exclusions.
+    exclusion_path: Optional[Path] = None
+    exclusion_comments: List[str] = []
+    if isinstance(exclusion_cell_ids, (str, Path)):
+        exclusion_path = Path(exclusion_cell_ids)
+        canonical_excluded_ids, exclusion_comments = _load_canonical_exclusions(exclusion_path)
+    elif exclusion_cell_ids is None:
+        canonical_excluded_ids = set()
+    else:
+        canonical_excluded_ids = {str(cell_id).strip() for cell_id in exclusion_cell_ids if str(cell_id).strip()}
+
     metadata_rows: List[Dict[str, Any]] = []
     label_rows: List[Dict[str, Any]] = []
     cycle_rows: List[Dict[str, Any]] = []
     exclusions: List[Dict[str, Any]] = []
     canonical_payloads: List[Dict[str, Any]] = []
     source_counts: Counter = Counter()
+    canonical_exclusions_applied: List[str] = []
     row_id = 0
     for mat_path in discover_matr_files(mat_dir):
         cells, loaded = severson_cells_from_file(mat_path, first_n_cycles=first_n_cycles)
@@ -1087,6 +1284,19 @@ def build_severson_true_life_dataset(
                         "is_exclusion": True,
                     }
                 )
+                continue
+            if cell.cell_id in canonical_excluded_ids:
+                exclusions.append(
+                    {
+                        "source_file": cell.source_file,
+                        "source_cell_index": cell.source_cell_index,
+                        "cell_id": cell.cell_id,
+                        "exclusion_stage": "canonical_exclusion",
+                        "reason": "listed_in_canonical_exclusions_file",
+                        "is_exclusion": True,
+                    }
+                )
+                canonical_exclusions_applied.append(cell.cell_id)
                 continue
             for warning in cell.warnings:
                 if "cycles_parse_failed_nonfatal" in warning or "curve_fields_unavailable" in warning:
@@ -1147,18 +1357,29 @@ def build_severson_true_life_dataset(
         raise ValueError("No cycle_summary rows were built")
     labels["y"] = labels["cycle_life"]
     source_files = sorted(metadata["source_file"].astype(str).unique().tolist())
-    split_map = {}
-    if len(source_files) == 1:
-        split_map[source_files[0]] = "train"
-    elif len(source_files) == 2:
-        split_map = {source_files[0]: "train", source_files[1]: "validation"}
-    else:
-        split_map = {source_files[0]: "train", source_files[1]: "validation"}
-        for source in source_files[2:]:
-            split_map[source] = "test"
+
+    # Legacy source-file-identity split: always computed so it can be written
+    # to the splits.csv `split_legacy` column for backward compatibility.
+    legacy_map = _legacy_split_map(source_files)
+    legacy_splits_series = metadata["source_file"].astype(str).map(legacy_map)
+
     splits = metadata[["row_id", "cell_id", "source_file", "source_batch", "batch_id"]].copy()
-    splits["split"] = splits["source_file"].map(split_map)
-    splits["split_source"] = "source_file_identity_default"
+
+    split_diagnostics: Dict[str, Any] = {}
+    balance_report: Dict[str, Any] = {}
+    if split_mode == "canonical_severson":
+        canonical_series, split_diagnostics = _canonical_severson_splits(
+            metadata, seed=split_seed, train_fraction=SEVERSON_CANONICAL_TRAIN_FRACTION
+        )
+        splits["split"] = canonical_series.values
+        splits["split_legacy"] = legacy_splits_series.values
+        splits["split_source"] = "canonical_severson"
+        balance_report = _cycle_life_split_balance(metadata, canonical_series)
+    else:  # source_file_identity (legacy behaviour, value-stable)
+        splits["split"] = legacy_splits_series.values
+        splits["split_legacy"] = legacy_splits_series.values
+        splits["split_source"] = "source_file_identity_default"
+
     metadata.to_csv(out / "cell_metadata.csv", index=False)
     cycle_summary.to_csv(out / "cycle_summary.csv", index=False)
     labels.to_csv(out / "labels.csv", index=False)
@@ -1184,7 +1405,28 @@ def build_severson_true_life_dataset(
         "canonical_raw_cells_dir": str(canonical_dir),
         "warnings": sorted({warning for payload in canonical_payloads for warning in payload.get("warnings", [])}),
         "caveat": "These are true measured lifetimes, unlike OED author_model_prediction pseudo-labels.",
+        "split_mode": split_mode,
+        "split_seed": int(split_seed),
+        "canonical_exclusions_file": str(exclusion_path) if exclusion_path is not None else None,
+        "canonical_exclusions_comments": exclusion_comments,
+        "canonical_exclusions_applied": sorted(canonical_exclusions_applied),
+        "canonical_exclusions_count": int(len(canonical_exclusions_applied)),
     }
+    if split_mode == "canonical_severson":
+        counts = balance_report.get("counts", {})
+        means = balance_report.get("means", {})
+        card["train_cells"] = int(counts.get("train", 0))
+        card["primary_test_cells"] = int(counts.get("primary_test", 0))
+        card["secondary_test_cells"] = int(counts.get("secondary_test", 0))
+        card["train_mean_cycle_life"] = means.get("train")
+        card["primary_test_mean_cycle_life"] = means.get("primary_test")
+        card["secondary_test_mean_cycle_life"] = means.get("secondary_test")
+        card["split_balance"] = {
+            "train_primary_abs_delta": balance_report.get("train_primary_abs_delta"),
+            "balance_tolerance": balance_report.get("balance_tolerance"),
+            "balanced": balance_report.get("balanced"),
+        }
+        card["split_diagnostics"] = split_diagnostics
     (out / "dataset_card.json").write_text(json.dumps(_json_ready(card), indent=2, sort_keys=True) + "\n")
     (out / "dataset_card.md").write_text(_write_dataset_card_md(card))
     return card

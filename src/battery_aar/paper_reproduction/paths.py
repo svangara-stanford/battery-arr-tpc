@@ -9,8 +9,17 @@ OED_BATCH_NAMES = (
     "2018-09-06_oed_2",
     "2018-09-10_oed_3",
 )
+# Attia closed-loop "transfer-only" batch. Still referenced because the optional
+# `--attia-transfer` / `--secondary-test-source=attia_batch9` path is preserved.
+# As of patch E4 the locked secondary test now points to Severson b3 by default;
+# see SEVERSON_MAT_DIR_NAME / SEVERSON_B3_BATCH_DATE below.
 VALIDATION_BATCH_NAME = "2019-01-24_batch9"
 VALIDATION_BATCH_ZIP = f"{VALIDATION_BATCH_NAME}.zip"
+
+# Severson b3 (locked secondary test under the new default contract).
+SEVERSON_MAT_DIR_NAME = "severson_2019_true_life_matr"
+SEVERSON_B3_BATCH_DATE = "2018-04-12"
+SEVERSON_B3_MAT_FILE_NAME = f"{SEVERSON_B3_BATCH_DATE}_batchdata_updated_struct_errorcorrect.mat"
 
 
 @dataclass(frozen=True)
@@ -94,6 +103,37 @@ def validation_status_label(status: str) -> str:
         "validation_failed": "validation_failed",
     }
     return mapping.get(status, "validation_failed")
+
+
+# ---------------------------------------------------------------------------
+# Secondary-test helpers (patch E4)
+#
+# The campaign locked secondary test now defaults to Severson b3 instead of
+# Attia Batch 9. We expose source-agnostic helpers (`secondary_test_status` /
+# `secondary_test_status_label`) that today alias the legacy validation_*
+# helpers; a full rename can happen in a future cleanup. The Severson b3
+# helper below resolves the `.mat` file path under
+# `<bfc>/data/severson_2019_true_life_matr/`.
+# ---------------------------------------------------------------------------
+
+
+def severson_b3_mat_path(bfc_root: str | Path) -> Path:
+    """Return the path to the Severson b3 .mat file.
+
+    The b3 batch corresponds to the 2018-04-12 batchdata file inside the
+    `severson_2019_true_life_matr/` directory.
+    """
+
+    root = Path(bfc_root).expanduser().resolve()
+    return root / "data" / SEVERSON_MAT_DIR_NAME / SEVERSON_B3_MAT_FILE_NAME
+
+
+# Aliases. Today these are equivalent to the legacy validation_* helpers; the
+# new names exist so call sites can be migrated without semantic drift. The old
+# names continue to work to avoid breaking downstream tooling during the
+# transition.
+secondary_test_status = validation_status
+secondary_test_status_label = validation_status_label
 
 
 def infer_batch_name_map(batch_paths: list[Path]) -> dict[str, str]:

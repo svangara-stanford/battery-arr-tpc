@@ -16,7 +16,13 @@ from battery_aar.paper_reproduction.bms_features import (
     parse_policy_currents,
     parse_protocol_readable,
 )
-from battery_aar.paper_reproduction.paths import OED_BATCH_NAMES, VALIDATION_BATCH_NAME, resolve_paper_paths
+from battery_aar.paper_reproduction.paths import (
+    OED_BATCH_NAMES,
+    SEVERSON_B3_BATCH_DATE,
+    VALIDATION_BATCH_NAME,
+    resolve_paper_paths,
+    severson_b3_mat_path,
+)
 
 
 @dataclass
@@ -563,6 +569,145 @@ def load_batch9_holdout(
     if not metadata_rows:
         raise RuntimeError(f"No labeled Batch 9 cells were loaded from {batch_path}")
     return pd.DataFrame(metadata_rows), pd.DataFrame(cycle_rows), pd.DataFrame(label_rows)
+
+
+def load_severson_b3_holdout(
+    battery_fast_charging_root: str | Path | None = None,
+    first_n_cycles: int = 100,
+    exclude_cell_ids: list[str] | tuple[str, ...] | set[str] | None = None,
+    mat_path: str | Path | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Load the Severson b3 (2018-04-12) batch as a locked-test holdout.
+
+    This is the patch-E4 default for the campaign's "locked secondary test".
+    It mirrors the shape returned by :func:`load_batch9_holdout` so downstream
+    orchestrator / role-graph code can treat the two holdouts interchangeably:
+    a metadata DataFrame, a cycle_summary DataFrame, and a labels DataFrame.
+
+    The returned `batch_id` for every metadata row is `severson_2018-04-12`,
+    deliberately disjoint from any Severson-2019 training batch ids so the
+    locked test never leaks into surrogate search.
+
+    Parameters
+    ----------
+    battery_fast_charging_root
+        Root of the battery-fast-charging local clone. Resolved via
+        :func:`severson_b3_mat_path` to locate the b3 `.mat` file.
+    first_n_cycles
+        Window of cycles to retain per cell (same semantics as
+        ``load_batch9_holdout``).
+    exclude_cell_ids
+        Optional list/tuple/set of normalized Severson cell_ids to drop. Useful
+        if a Severson training run later turns out to overlap; today the b3
+        batch is held out of training.
+    mat_path
+        Optional explicit override for the b3 `.mat` file path. When provided,
+        ``battery_fast_charging_root`` is ignored.
+    """
+
+    # Imported lazily because severson_matr pulls scipy.io / h5py and the
+    # other consumers of this module (Attia path) should not have to load it.
+    from battery_aar.features.severson_matr import discover_matr_files, severson_cells_from_file
+
+    if mat_path is not None:
+        b3_path = Path(mat_path)
+    else:
+        if battery_fast_charging_root is None:
+            raise ValueError(
+                "load_severson_b3_holdout requires battery_fast_charging_root or mat_path"
+            )
+        b3_path = severson_b3_mat_path(battery_fast_charging_root)
+        # Fallback: if the explicit b3 file isn't present, scan the directory
+        # for any file containing the b3 batch date so we still pick the right
+        # mat. This makes the loader robust to slight filename variations.
+        if not b3_path.exists():
+            mat_dir = b3_path.parent
+            if mat_dir.is_dir():
+                candidates = [
+                    candidate
+                    for candidate in discover_matr_files(mat_dir)
+                    if SEVERSON_B3_BATCH_DATE in candidate.name
+                ]
+                if candidates:
+                    b3_path = candidates[0]
+    if not b3_path.exists():
+        raise FileNotFoundError(f"Severson b3 .mat file not found: {b3_path}")
+
+    exclude = {str(value) for value in (exclude_cell_ids or [])}
+    cells, _loaded = severson_cells_from_file(b3_path, first_n_cycles=first_n_cycles)
+    batch_id_value = f"severson_{SEVERSON_B3_BATCH_DATE}"
+
+    metadata_rows: list[dict[str, Any]] = []
+    cycle_rows: list[dict[str, Any]] = []
+    label_rows: list[dict[str, Any]] = []
+    row_id = 0
+    for cell in cells:
+        cell_id = str(cell.cell_id)
+        if cell_id in exclude:
+            continue
+        if cell.cycle_life is None or not np.isfinite(float(cell.cycle_life)):
+            continue
+        if not cell.summary:
+            continue
+        discharge = np.asarray(cell.summary.get("discharge_capacity", []), dtype=float)
+        if discharge.size == 0:
+            continue
+        cycle_index = np.asarray(
+            cell.summary.get("cycle_index", np.arange(1, discharge.size + 1)), dtype=float
+        )
+        if cycle_index.size != discharge.size:
+            cycle_index = np.arange(1, discharge.size + 1, dtype=float)
+        charge_raw = cell.summary.get("charge_capacity")
+        if charge_raw is None:
+            charge = np.full(discharge.size, np.nan, dtype=float)
+        else:
+            charge = np.asarray(charge_raw, dtype=float)
+            if charge.size != discharge.size:
+                charge = np.full(discharge.size, np.nan, dtype=float)
+        anon = f"severson_b3_cell_{row_id:05d}"
+        metadata_rows.append(
+            {
+                "row_id": row_id,
+                "cell_id": anon,
+                "anonymized_cell_id": anon,
+                "batch_id": batch_id_value,
+                "source_batch": cell.source_batch,
+                "source_file": cell.source_file,
+                "source_cell_index": cell.source_cell_index,
+                "source_cell_id": cell_id,
+                "barcode": cell.metadata.get("barcode"),
+                "channel": cell.metadata.get("channel"),
+                "policy": cell.metadata.get("policy"),
+                "protocol_readable": cell.metadata.get("policy"),
+            }
+        )
+        label_rows.append({"row_id": row_id, "y": float(cell.cycle_life)})
+        for idx, cyc in enumerate(cycle_index):
+            if not np.isfinite(cyc):
+                continue
+            cyc_int = int(cyc)
+            if cyc_int < 1 or cyc_int > first_n_cycles:
+                continue
+            cycle_rows.append(
+                {
+                    "row_id": row_id,
+                    "cell_id": anon,
+                    "cycle_index": cyc_int,
+                    "discharge_capacity": float(discharge[idx]) if np.isfinite(discharge[idx]) else np.nan,
+                    "charge_capacity": float(charge[idx]) if np.isfinite(charge[idx]) else np.nan,
+                }
+            )
+        row_id += 1
+
+    if not metadata_rows:
+        raise RuntimeError(
+            f"No labeled Severson b3 cells were loaded from {b3_path}"
+        )
+    return (
+        pd.DataFrame(metadata_rows),
+        pd.DataFrame(cycle_rows),
+        pd.DataFrame(label_rows),
+    )
 
 
 def load_author_validation_metrics(reference_run: str | Path | None) -> dict[str, Any]:

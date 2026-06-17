@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -40,7 +41,27 @@ def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, floa
     r2 = r2_score(y_true, y_pred) if y_true.size > 1 else float("nan")
     spearman = spearmanr(y_true, y_pred).statistic if y_true.size > 1 else float("nan")
     kendall = kendalltau(y_true, y_pred).statistic if y_true.size > 1 else float("nan")
-    return {"rmse": float(rmse), "mae": float(mae), "r2": float(r2), "spearman": float(spearman), "kendall": float(kendall)}
+    # MAPE: mask non-positive / non-finite y_true to avoid division blowups.
+    mape_mask = np.isfinite(y_true) & np.isfinite(y_pred) & (y_true > 0)
+    if mape_mask.any():
+        mape = float(np.mean(np.abs((y_true[mape_mask] - y_pred[mape_mask]) / y_true[mape_mask])))
+    else:
+        warnings.warn(
+            "regression_metrics: no positive finite y_true values available for MAPE; returning NaN.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        mape = float("nan")
+    test_error_pct = mape * 100.0 if np.isfinite(mape) else float("nan")
+    return {
+        "rmse": float(rmse),
+        "mae": float(mae),
+        "r2": float(r2),
+        "spearman": float(spearman),
+        "kendall": float(kendall),
+        "mape": float(mape),
+        "test_error_pct": float(test_error_pct),
+    }
 
 
 def battery_pgr(weak_rmse: float | None, candidate_rmse: float | None, strong_rmse: float | None) -> float | None:

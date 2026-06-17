@@ -27,7 +27,7 @@ def _metric_dict(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float | in
     y_true = y_true[mask]
     y_pred = y_pred[mask]
     if y_true.size == 0:
-        return {"n": 0, "pearson": None, "kendall": None, "rmse": None, "mae": None}
+        return {"n": 0, "pearson": None, "kendall": None, "rmse": None, "mae": None, "mape": None}
     rmse = float(np.sqrt(np.mean((y_pred - y_true) ** 2)))
     mae = float(np.mean(np.abs(y_pred - y_true)))
     pearson = None
@@ -35,7 +35,12 @@ def _metric_dict(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float | in
     if y_true.size >= 2 and np.nanstd(y_true) > 0 and np.nanstd(y_pred) > 0:
         pearson = float(pearsonr(y_true, y_pred).statistic)
         kendall = float(kendalltau(y_true, y_pred).statistic)
-    return {"n": int(y_true.size), "pearson": pearson, "kendall": kendall, "rmse": rmse, "mae": mae}
+    mape_mask = y_true > 0
+    if mape_mask.any():
+        mape = float(np.mean(np.abs((y_true[mape_mask] - y_pred[mape_mask]) / y_true[mape_mask])))
+    else:
+        mape = None
+    return {"n": int(y_true.size), "pearson": pearson, "kendall": kendall, "rmse": rmse, "mae": mae, "mape": mape}
 
 
 def build_validation_protocol_ranking(validation_rich: pd.DataFrame, final_posterior_ranking: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, object]]:

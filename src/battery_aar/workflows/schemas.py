@@ -110,7 +110,7 @@ class ModelPlan(ArtifactBase):
     iteration: Optional[int] = None
     model_family: str
     estimator_name: Optional[str] = None
-    target_transform: str = "raw"
+    target_transform: str = "log10"
     feature_set: str = "all_available"
     hyperparameters: Dict[str, Any] = Field(default_factory=dict)
     preprocessing_steps: List[str] = Field(default_factory=list)
@@ -134,7 +134,7 @@ class CandidateSpec(ArtifactBase):
     feature_families: List[str] = Field(default_factory=list)
     include_protocol_features: bool = False
     model_family: Optional[str] = None
-    target_transform: str = "raw"
+    target_transform: str = "log10"
     feature_set: str = "all_available"
     feature_program_paths: List[str] = Field(default_factory=list)
     feature_program_mode: str = "none"
@@ -170,6 +170,8 @@ class EvaluationReport(ArtifactBase):
     r2: Optional[float] = None
     spearman: Optional[float] = None
     kendall: Optional[float] = None
+    mape: Optional[float] = None
+    test_error_pct: Optional[float] = None
     pgr: Optional[float] = None
     failure_reason: Optional[str] = None
     traceback: Optional[str] = None

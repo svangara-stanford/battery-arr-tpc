@@ -62,7 +62,35 @@ def make_scalar_baseline_program(first_n_cycles: int = 100) -> FeatureProgram:
     )
 
 
-def make_curve_delta_program(cycle_early: int = 9, cycle_late: int = 99) -> FeatureProgram:
+def make_curve_delta_program(
+    cycle_early: int = 9,
+    cycle_late: int = 99,
+    voltage_window: tuple[float, float] | None = None,
+) -> FeatureProgram:
+    """Curve-delta recipe.
+
+    Parameters
+    ----------
+    cycle_early, cycle_late
+        Cycle indices to compare.
+    voltage_window
+        Optional ``(V_low, V_high)`` clip applied to both curves before
+        interpolation. When ``None`` (default) the per-cell intersection of
+        voltage ranges is used (preserves existing behaviour). For Severson-style
+        LFP benchmarks the convention is ``voltage_window=(2.0, 3.5)``.
+    """
+    params: dict = {
+        "step_type": "discharge",
+        "cycle_pairs": [[cycle_early, cycle_late]],
+        "x_axis": "voltage",
+        "y_signal": "discharge_capacity",
+        "grid_size": 1000,
+        "delta_direction": "later_minus_earlier",
+        "transforms": ["identity", "abs", "log_abs"],
+        "aggregations": ["min", "max", "mean", "std", "var", "log_var", "skew", "sum_abs", "sum_sq", "area_abs", "area_signed"],
+    }
+    if voltage_window is not None:
+        params["voltage_window"] = [float(voltage_window[0]), float(voltage_window[1])]
     return _program(
         f"curve_delta_idx{cycle_early}_{cycle_late}",
         "Curve Delta",
@@ -72,16 +100,7 @@ def make_curve_delta_program(cycle_early: int = 9, cycle_late: int = 99) -> Feat
                 operator_name="cross_cycle_curve_delta",
                 operator_type="cross_cycle_curve_delta",
                 family="true_curve_difference",
-                params={
-                    "step_type": "discharge",
-                    "cycle_pairs": [[cycle_early, cycle_late]],
-                    "x_axis": "voltage",
-                    "y_signal": "discharge_capacity",
-                    "grid_size": 1000,
-                    "delta_direction": "later_minus_earlier",
-                    "transforms": ["identity", "abs", "log_abs"],
-                    "aggregations": ["min", "max", "mean", "std", "var", "skew", "sum_abs", "sum_sq", "area_abs", "area_signed"],
-                },
+                params=params,
             )
         ],
         max(cycle_late + 1, 100),
@@ -122,7 +141,7 @@ def make_attia_severson_like_program(cycle_early: int = 9, cycle_late: int = 99)
                     "grid_size": 1000,
                     "delta_direction": "later_minus_earlier",
                     "transforms": ["identity", "log_abs"],
-                    "aggregations": ["min", "mean", "var", "skew", "sum_abs", "sum_sq"],
+                    "aggregations": ["min", "mean", "var", "log_var", "skew", "sum_abs", "sum_sq"],
                 },
             ),
         ],
@@ -130,8 +149,45 @@ def make_attia_severson_like_program(cycle_early: int = 9, cycle_late: int = 99)
     )
 
 
-def make_broad_physics_program(first_n_cycles: int = 100) -> FeatureProgram:
+def make_broad_physics_program(
+    first_n_cycles: int = 100,
+    voltage_window: tuple[float, float] | None = None,
+) -> FeatureProgram:
+    """Broad physics recipe.
+
+    Parameters
+    ----------
+    first_n_cycles
+        How many early cycles to use.
+    voltage_window
+        Optional ``(V_low, V_high)`` clip applied to both curves of every
+        cross-cycle-curve-delta operator before interpolation. When ``None``
+        (default) the per-cell intersection of voltage ranges is used
+        (preserves existing behaviour). For Severson-style LFP benchmarks the
+        convention is ``voltage_window=(2.0, 3.5)``.
+    """
     late = max(1, first_n_cycles - 1)
+    curve_shape_params: dict = {
+        "step_types": ["discharge", "charge"],
+        "cycles": [0, 1, 9, min(49, late), late],
+        "x_axis": "voltage",
+        "y_signals": ["discharge_capacity", "charge_capacity", "current", "temperature"],
+        "grid_size": 1000,
+        "aggregations": ["min", "max", "mean", "std", "var", "area", "slope_mean"],
+    }
+    curve_delta_params: dict = {
+        "step_type": "discharge",
+        "cycle_pairs": [[9, late]],
+        "x_axis": "voltage",
+        "y_signal": "discharge_capacity",
+        "grid_size": 1000,
+        "transforms": ["identity", "abs", "log_abs"],
+        "aggregations": ["min", "max", "mean", "std", "var", "log_var", "skew", "sum_abs", "sum_sq", "area_abs", "area_signed"],
+    }
+    if voltage_window is not None:
+        window_list = [float(voltage_window[0]), float(voltage_window[1])]
+        curve_shape_params["voltage_window"] = window_list
+        curve_delta_params["voltage_window"] = window_list
     return _program(
         "broad_physics",
         "Broad Physics",
@@ -142,28 +198,13 @@ def make_broad_physics_program(first_n_cycles: int = 100) -> FeatureProgram:
                 operator_name="curve_shape",
                 operator_type="curve_shape",
                 family="true_curve_shape",
-                params={
-                    "step_types": ["discharge", "charge"],
-                    "cycles": [0, 1, 9, min(49, late), late],
-                    "x_axis": "voltage",
-                    "y_signals": ["discharge_capacity", "charge_capacity", "current", "temperature"],
-                    "grid_size": 300,
-                    "aggregations": ["min", "max", "mean", "std", "var", "area", "slope_mean"],
-                },
+                params=curve_shape_params,
             ),
             FeatureOperatorSpec(
                 operator_name="cross_cycle_curve_delta",
                 operator_type="cross_cycle_curve_delta",
                 family="true_curve_difference",
-                params={
-                    "step_type": "discharge",
-                    "cycle_pairs": [[9, late]],
-                    "x_axis": "voltage",
-                    "y_signal": "discharge_capacity",
-                    "grid_size": 500,
-                    "transforms": ["identity", "abs", "log_abs"],
-                    "aggregations": ["min", "max", "mean", "std", "var", "skew", "sum_abs", "sum_sq", "area_abs", "area_signed"],
-                },
+                params=curve_delta_params,
             ),
             FeatureOperatorSpec(
                 operator_name="learned_embedding_placeholder",

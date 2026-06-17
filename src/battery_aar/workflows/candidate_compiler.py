@@ -282,6 +282,12 @@ CURVE_FAMILIES = {{
     "true_curve_shape", "true_curve_difference", "curve_difference_proxy",
     "curve_difference_approximate", "curve_shape_proxy",
 }}
+# Families that the broad_physics recipe emits in addition to SCALAR + CURVE.
+# Kept as a separate set so broad_physics is a strict superset of
+# scalar_plus_curve (fix E3.1).
+BROAD_PHYSICS_EXTRA_FAMILIES = {{
+    "learned_embedding_placeholder", "generic_timeseries_placeholder",
+}}
 PROTOCOL_FAMILIES = {{"protocol"}}
 
 
@@ -310,7 +316,38 @@ def _families_for_feature_set(feature_set, allow_protocol):
     elif feature_set == "scalar_plus_curve":
         families = set(SCALAR_FAMILIES) | set(CURVE_FAMILIES)
     elif feature_set == "broad_physics":
-        families = set(SCALAR_FAMILIES) | set(CURVE_FAMILIES)
+        # Fix E3.1: broad_physics is a STRICT SUPERSET of scalar_plus_curve.
+        # The make_broad_physics_program recipe in program_library.py emits all
+        # the scalar/curve_shape/curve_delta families plus placeholder families
+        # reserved for future learned-embedding / generic-timeseries operators.
+        # We allow those families through here so any feature_program table
+        # built from the broad_physics recipe is not silently filtered down to
+        # the scalar_plus_curve subset.
+        families = set(SCALAR_FAMILIES) | set(CURVE_FAMILIES) | set(BROAD_PHYSICS_EXTRA_FAMILIES)
+        # If the candidate declares feature_program_paths but none of them
+        # looks like a broad_physics program table, emit a stdlib warning so
+        # the missing recipe is visible in stderr_excerpt / report logs.
+        _broad_physics_paths = [str(p) for p in FEATURE_PROGRAM_PATHS]
+        if _broad_physics_paths and not any(
+            "broad_physics" in p.lower() for p in _broad_physics_paths
+        ):
+            import warnings as _warnings
+            _warnings.warn(
+                "broad_physics_feature_program_missing: feature_set='broad_physics' "
+                "was requested but no feature_program_paths entry references a "
+                "broad_physics recipe; falling back to scalar_plus_curve coverage.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        elif not _broad_physics_paths:
+            import warnings as _warnings
+            _warnings.warn(
+                "broad_physics_feature_program_missing: feature_set='broad_physics' "
+                "was requested but no feature_program_paths were provided; "
+                "richer broad_physics features will be unavailable.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
     elif feature_set == "protocol_only":
         families = set(PROTOCOL_FAMILIES)
     else:

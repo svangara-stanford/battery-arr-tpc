@@ -1,0 +1,49 @@
+# Severson 2019 canonical-split exclusion list.
+#
+# One cell_id per line. Lines starting with '#' are comments. Blank lines
+# ignored. Cell IDs listed here are dropped before the canonical
+# train/primary_test/secondary_test split and recorded in exclusions.csv
+# with stage `canonical_exclusion`.
+#
+# Provenance:
+#   - Severson et al., Nature Energy 2019. Methods section flags "four cells
+#     [that] had unexpectedly high measurement noise and were excluded from
+#     analysis" in batch 3.
+#   - The authors' `Load Data.ipynb` (Braatz/MIT GitHub: rdbraatz/
+#     data-driven-prediction-of-battery-cycle-life-before-capacity-degradation)
+#     explicitly drops `b3c2, b3c23, b3c32, b3c37, b3c42, b3c43` and stitches
+#     `b2c[7,8,9,15,16]` onto `b1c[0..4]` as workarounds for b1 cells that
+#     did not finish.
+#   - Microsoft BatteryML reproduces this same exclusion list, giving the
+#     canonical b3 = 40 cells used for "MATR2".
+#   - Verified empirically (2026-06-11, agent G4 / G3): applying these
+#     exclusions reproduces Severson's published Variance-model b3 RMSE 149
+#     to within 1 cycle on our pipeline.
+#
+# Cell-id format used by the Severson true-life loader:
+#   <source_basename>_cell_<src_idx>   e.g.
+#   2018-04-12_batchdata_updated_struct_errorcorrect_cell_002
+#
+# Indices below are the 0-indexed `source_cell_index` within each batch's
+# .mat file, matching Severson's `b1c<idx>` / `b3c<idx>` convention.
+
+# --- Batch 3 (2018-04-12) noisy / non-EOL cells (Severson Methods) ---
+# b3c23 and b3c32 are also auto-dropped by the loader because their
+# cycle_life is NaN (never reached 0.88 Ah). Listed here for completeness.
+2018-04-12_batchdata_updated_struct_errorcorrect_cell_002
+2018-04-12_batchdata_updated_struct_errorcorrect_cell_023
+2018-04-12_batchdata_updated_struct_errorcorrect_cell_032
+2018-04-12_batchdata_updated_struct_errorcorrect_cell_037
+2018-04-12_batchdata_updated_struct_errorcorrect_cell_042
+2018-04-12_batchdata_updated_struct_errorcorrect_cell_043
+
+# --- Batch 1 (2017-05-12) cells that did not finish ---
+# Severson's LoadData.m drops b1c[8,10,12,13,22] explicitly. We list them
+# here so they're recorded in exclusions.csv rather than slipping through.
+# BatteryML alternatively stitches b1c[0..4] with b2c[7,8,9,15,16] which is
+# a different reproducibility strategy; we follow Severson's drop-only path.
+2017-05-12_batchdata_updated_struct_errorcorrect_cell_008
+2017-05-12_batchdata_updated_struct_errorcorrect_cell_010
+2017-05-12_batchdata_updated_struct_errorcorrect_cell_012
+2017-05-12_batchdata_updated_struct_errorcorrect_cell_013
+2017-05-12_batchdata_updated_struct_errorcorrect_cell_022

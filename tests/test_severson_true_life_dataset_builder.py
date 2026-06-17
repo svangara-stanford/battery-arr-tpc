@@ -34,7 +34,11 @@ def test_build_severson_true_life_dataset_outputs_processed_tables(tmp_path):
     assert metadata["source_dataset"].eq("severson_2019_true_life").all()
     assert "batch_id" in metadata.columns
     assert "canonical_raw_path" in metadata.columns
-    assert set(splits["split"]).issubset({"train", "validation", "test"})
+    # Canonical-severson splitter (new default) emits primary_test/secondary_test;
+    # legacy values are preserved in `split_legacy`.
+    assert set(splits["split"]).issubset({"train", "primary_test", "secondary_test"})
+    assert "split_legacy" in splits.columns
+    assert set(splits["split_legacy"]).issubset({"train", "validation", "test"})
     assert card["label_source"] == TRUE_LABEL_SOURCE
 
 

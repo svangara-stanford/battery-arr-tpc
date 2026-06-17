@@ -456,6 +456,27 @@ def _interpolate_curve(x: np.ndarray, y: np.ndarray, grid: np.ndarray) -> np.nda
     return np.interp(grid, x, y)
 
 
+def _clip_curve_to_window(
+    x: np.ndarray,
+    y: np.ndarray,
+    voltage_window: tuple[float, float] | list | None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Clip an ``(x, y)`` curve to ``[V_low, V_high]``.
+
+    Returns the curve unmodified when ``voltage_window`` is ``None``.
+    """
+    if voltage_window is None:
+        return x, y
+    if x.size == 0 or y.size == 0:
+        return x, y
+    lo = float(voltage_window[0])
+    hi = float(voltage_window[1])
+    if hi <= lo:
+        return x, y
+    mask = (x >= lo) & (x <= hi)
+    return x[mask], y[mask]
+
+
 def curve_shape(spec: FeatureOperatorSpec, cycles_df: pd.DataFrame, summary_df: pd.DataFrame, metadata_row: pd.Series | None = None) -> FeatureOperatorOutput:
     params = spec.params
     step_types = list(params.get("step_types", ["discharge"]))
@@ -464,6 +485,7 @@ def curve_shape(spec: FeatureOperatorSpec, cycles_df: pd.DataFrame, summary_df: 
     y_signals = list(params.get("y_signals", ["discharge_capacity"]))
     grid_size = int(params.get("grid_size", 1000))
     aggregations = list(params.get("aggregations", ["min", "max", "mean", "std", "var", "skew", "area", "slope_mean"]))
+    voltage_window = params.get("voltage_window")
     features: dict[str, float] = {}
     metadata: list[dict[str, Any]] = []
     warnings: list[str] = []
@@ -471,12 +493,16 @@ def curve_shape(spec: FeatureOperatorSpec, cycles_df: pd.DataFrame, summary_df: 
         for cycle in cycles:
             for y_signal in y_signals:
                 x, y = _curve_for(cycles_df, cycle=cycle, step_type=step_type, x_axis=x_axis, y_signal=y_signal)
+                x, y = _clip_curve_to_window(x, y, voltage_window)
                 if x.size < 2:
                     warnings.append(f"curve missing for {step_type} cycle {cycle} {y_signal}")
                     values = np.asarray([], dtype=float)
                     grid = np.asarray([], dtype=float)
                 else:
-                    grid = np.linspace(float(np.min(x)), float(np.max(x)), max(2, grid_size))
+                    if voltage_window is not None:
+                        grid = np.linspace(float(voltage_window[0]), float(voltage_window[1]), max(2, grid_size))
+                    else:
+                        grid = np.linspace(float(np.min(x)), float(np.max(x)), max(2, grid_size))
                     values = _interpolate_curve(x, y, grid)
                 gradient = np.gradient(values, grid) if values.size >= 2 and grid.size >= 2 else np.asarray([], dtype=float)
                 agg_values = {
@@ -535,6 +561,11 @@ def _curve_delta_aggregate(values: np.ndarray, grid: np.ndarray, aggregation: st
         return _finite(np.sum(np.abs(values)))
     if aggregation == "sum_sq":
         return _finite(np.sum(values**2))
+    if aggregation == "log_var":
+        # log10 of variance with epsilon floor to keep log of zero finite.
+        # This is the exact feature Severson et al. use as the Variance model
+        # input: log10(Var(Q_late(V) - Q_early(V))).
+        return _finite(np.log10(np.var(values) + 1e-30))
     if aggregation == "area_abs":
         x_axis = grid if grid.size == values.size else np.arange(values.size, dtype=float)
         return _finite(np.trapz(np.abs(values), x_axis)) if values.size >= 2 else np.nan
@@ -555,19 +586,29 @@ def cross_cycle_curve_delta(spec: FeatureOperatorSpec, cycles_df: pd.DataFrame, 
     transforms = list(params.get("transforms", ["identity", "log_abs"]))
     aggregations = list(params.get("aggregations", ["min", "max", "mean", "std", "var", "skew", "sum_abs", "sum_sq", "area_abs", "area_signed"]))
     eps = float(params.get("eps", 1e-12))
+    voltage_window = params.get("voltage_window")
     features: dict[str, float] = {}
     metadata: list[dict[str, Any]] = []
     warnings: list[str] = []
     for early, late in cycle_pairs:
         x_early, y_early = _curve_for(cycles_df, cycle=early, step_type=step_type, x_axis=x_axis, y_signal=y_signal)
         x_late, y_late = _curve_for(cycles_df, cycle=late, step_type=step_type, x_axis=x_axis, y_signal=y_signal)
+        # Optional fixed-window clip (e.g. (2.0, 3.5) for Severson-style LFP
+        # benchmarks). When None, fall back to the per-cell intersection
+        # behaviour for full backward compatibility.
+        x_early, y_early = _clip_curve_to_window(x_early, y_early, voltage_window)
+        x_late, y_late = _clip_curve_to_window(x_late, y_late, voltage_window)
         if x_early.size < 2 or x_late.size < 2:
             warnings.append(f"curve pair missing for {step_type} {y_signal} cycles {early},{late}")
             grid = np.asarray([], dtype=float)
             delta = np.asarray([], dtype=float)
         else:
-            lo = max(float(np.min(x_early)), float(np.min(x_late)))
-            hi = min(float(np.max(x_early)), float(np.max(x_late)))
+            if voltage_window is not None:
+                lo = float(voltage_window[0])
+                hi = float(voltage_window[1])
+            else:
+                lo = max(float(np.min(x_early)), float(np.min(x_late)))
+                hi = min(float(np.max(x_early)), float(np.max(x_late)))
             if hi <= lo:
                 warnings.append(f"curve pair has no overlapping {x_axis} range for cycles {early},{late}")
                 grid = np.asarray([], dtype=float)
