@@ -414,7 +414,7 @@ class ModelArchitect:
                 iteration=iteration,
                 model_family="linear_regularized",
                 estimator_name="Ridge",
-                target_transform="raw",
+                target_transform="log10",
                 feature_set="all_available",
                 hyperparameters={"alpha": 1.0},
                 preprocessing_steps=["drop_all_nan_columns", "SimpleImputer(strategy='median')", "StandardScaler"],
@@ -436,7 +436,7 @@ class ModelArchitect:
                 iteration=iteration,
                 model_family=_as_str_or(payload.get("model_family"), "regularized_regression") or "regularized_regression",
                 estimator_name=_as_str_or(payload.get("estimator_name"), None),
-                target_transform=_as_str_or(payload.get("target_transform"), "raw") or "raw",
+                target_transform=_as_str_or(payload.get("target_transform"), "log10") or "log10",
                 feature_set=_as_str_or(payload.get("feature_set"), "all_available") or "all_available",
                 hyperparameters=_as_dict_or_empty(payload.get("hyperparameters")),
                 preprocessing_steps=_as_str_list(payload.get("preprocessing_steps", [])),
@@ -773,11 +773,13 @@ class Evaluator:
             r2=metrics.get("r2"),
             spearman=metrics.get("spearman"),
             kendall=metrics.get("kendall"),
+            mape=metrics.get("mape"),
+            test_error_pct=metrics.get("test_error_pct"),
             pgr=metrics.get("pgr_author_model"),
             failure_reason=response.failure_reason or response.error_message,
             traceback=response.traceback,
             prediction_path=response.prediction_path,
-            extra_metrics={k: v for k, v in metrics.items() if k not in {"rmse", "mae", "r2", "spearman", "kendall", "pgr_author_model"}},
+            extra_metrics={k: v for k, v in metrics.items() if k not in {"rmse", "mae", "r2", "spearman", "kendall", "mape", "test_error_pct", "pgr_author_model"}},
         )
         ctx.store.write_artifact(report)
         return report
@@ -853,6 +855,7 @@ _SHORTLIST_REQUIRED_KEYS: tuple[str, ...] = (
     "target_transform",
     "surrogate_rmse",
     "surrogate_mae",
+    "surrogate_mape",
     "surrogate_spearman",
     "rank_in_shortlist",
 )
@@ -880,7 +883,7 @@ def _coerce_shortlist_entry(raw: Any, rank_hint: int) -> dict[str, Any] | None:
     if coerced_seed is None:
         return None
     entry["split_seed"] = coerced_seed
-    for metric_key in ("surrogate_rmse", "surrogate_mae", "surrogate_spearman"):
+    for metric_key in ("surrogate_rmse", "surrogate_mae", "surrogate_mape", "surrogate_spearman"):
         value = entry.get(metric_key)
         if value is None:
             return None
@@ -944,7 +947,7 @@ class ChampionAggregator:
                 "shortlist (list of dicts with candidate_id, source_run_id, candidate_path, "
                 "feature_program_path, processed_dir, recipe, split_mode, split_seed, "
                 "model_family, feature_set, target_transform, surrogate_rmse, surrogate_mae, "
-                "surrogate_spearman, rank_in_shortlist)"
+                "surrogate_mape, surrogate_spearman, rank_in_shortlist)"
             )
             payload = _llm_json(
                 self.role_name,
@@ -1048,7 +1051,8 @@ class ChampionAdjudicator:
         else:
             schema_hint = (
                 "ChampionDecision keys: agent_id, selection_criteria, rationale, "
-                "final_champion (dict with at least candidate_id and source_run_id, plus batch9_rmse, batch9_mae, batch9_spearman, batch9_pgr), "
+                "final_champion (dict with at least candidate_id and source_run_id, plus batch9_rmse, batch9_mae, batch9_mape, batch9_spearman, batch9_pgr, "
+                "and the equivalent secondary_test_rmse, secondary_test_mae, secondary_test_mape, secondary_test_spearman, secondary_test_pgr aliases if available), "
                 "runner_up (same shape or null), shortlist_evaluated (list of dicts)"
             )
             payload = _llm_json(

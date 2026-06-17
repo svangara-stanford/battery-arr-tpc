@@ -8,7 +8,11 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from battery_aar.agents.attia_data_bridge import load_author_validation_metrics, load_batch9_holdout
+from battery_aar.agents.attia_data_bridge import (
+    load_author_validation_metrics,
+    load_batch9_holdout,
+    load_severson_b3_holdout,
+)
 from battery_aar.agents.evaluator import battery_pgr, evaluate_candidate_train_test, regression_metrics
 from battery_aar.agents.orchestrator import make_search_split, weak_baseline_rmse_against
 from battery_aar.tools.client import HTTPToolClient, NativeToolClient
@@ -53,6 +57,10 @@ class RoleGraphConfig:
     final_batch9_top_k: int = 0
     feature_program_paths: list[Path] | None = None
     batch9_feature_program_path: Path | None = None
+    # Patch E4: secondary-test routing.
+    secondary_test_source: str = "severson_b3"
+    secondary_test_path: Path | None = None
+    secondary_test_feature_program_path: Path | None = None
     include_feature_programs: bool = False
     feature_program_mode: str = "none"
     feature_program_recipe: str | None = None
@@ -61,21 +69,23 @@ class RoleGraphConfig:
     cycle_late_index: int = 99
 
 
-def _load_processed(processed_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Path | None]:
+def _load_processed(processed_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Path | None, pd.DataFrame | None]:
     metadata_path = processed_dir / "cell_metadata.csv"
     if not metadata_path.exists():
         metadata_path = processed_dir / "metadata.csv"
     cycle_path = processed_dir / "cycle_summary.csv"
     labels_path = processed_dir / "labels.csv"
+    splits_path = processed_dir / "splits.csv"
     if not metadata_path.exists() or not cycle_path.exists():
         raise FileNotFoundError(f"processed dataset requires metadata/cell_metadata and cycle_summary CSVs: {processed_dir}")
     metadata = pd.read_csv(metadata_path)
     cycles = pd.read_csv(cycle_path)
+    splits_table = pd.read_csv(splits_path) if splits_path.exists() else None
     if labels_path.exists():
         labels = pd.read_csv(labels_path)
         if "y" not in labels.columns and "cycle_life" in labels.columns:
             labels = labels.rename(columns={"cycle_life": "y"})
-        return metadata, cycles, labels, labels_path
+        return metadata, cycles, labels, labels_path, splits_table
     if "cycle_life" not in metadata.columns:
         raise ValueError("processed metadata must contain cycle_life or processed_dir must contain labels.csv")
     label_cols = ["row_id", "cycle_life"]
@@ -83,7 +93,7 @@ def _load_processed(processed_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame, pd
         if col in metadata.columns:
             label_cols.append(col)
     labels = metadata[label_cols].rename(columns={"cycle_life": "y"}).copy()
-    return metadata, cycles, labels, None
+    return metadata, cycles, labels, None, splits_table
 
 
 def _metadata_path(processed_dir: Path) -> Path:
@@ -277,6 +287,8 @@ def _candidate_metric_row(record: dict[str, Any]) -> dict[str, Any]:
         "r2": evaluation.r2,
         "spearman": evaluation.spearman,
         "kendall": evaluation.kendall,
+        "mape": evaluation.mape,
+        "test_error_pct": evaluation.test_error_pct,
         "prediction_path": evaluation.prediction_path,
         "y_pred_mean": extra.get("y_pred_mean"),
         "y_true_mean": extra.get("y_true_mean"),
@@ -473,51 +485,51 @@ def _write_report(report_path: Path, report: dict[str, Any]) -> None:
             "",
             "## Per-Iteration Candidates",
             "",
-            "| iteration | candidate_id | model_family | feature_set | target_transform | include_protocol_features | success | RMSE | MAE | R2 | y_pred_mean | y_true_mean | prediction_path |",
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| iteration | candidate_id | model_family | feature_set | target_transform | include_protocol_features | success | RMSE | MAE | R2 | MAPE | test_error_pct | y_pred_mean | y_true_mean | prediction_path |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
     if per_iteration_rows:
         for row in per_iteration_rows:
             lines.append(
-                "| {iteration} | {candidate_id} | {model_family} | {feature_set} | {target_transform} | {include_protocol_features} | {success} | {rmse} | {mae} | {r2} | {y_pred_mean} | {y_true_mean} | `{prediction_path}` |".format(
+                "| {iteration} | {candidate_id} | {model_family} | {feature_set} | {target_transform} | {include_protocol_features} | {success} | {rmse} | {mae} | {r2} | {mape} | {test_error_pct} | {y_pred_mean} | {y_true_mean} | `{prediction_path}` |".format(
                     **row
                 )
             )
     else:
-        lines.append("| | | | | | | | | | | | |")
+        lines.append("| | | | | | | | | | | | | | | |")
     lines.extend(
         [
             "",
             "### Best By Feature Set",
             "",
-            "| feature_set | candidate_id | model_family | target_transform | RMSE | MAE | R2 |",
-            "| --- | --- | --- | --- | --- | --- | --- |",
+            "| feature_set | candidate_id | model_family | target_transform | RMSE | MAE | R2 | MAPE | test_error_pct |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
     if best_by_feature_set:
         for row in best_by_feature_set:
             lines.append(
-                "| {feature_set} | {candidate_id} | {model_family} | {target_transform} | {rmse} | {mae} | {r2} |".format(**row)
+                "| {feature_set} | {candidate_id} | {model_family} | {target_transform} | {rmse} | {mae} | {r2} | {mape} | {test_error_pct} |".format(**row)
             )
     else:
-        lines.append("| | | | | | | |")
+        lines.append("| | | | | | | | | |")
     lines.extend(
         [
             "",
             "### Best By Target Transform",
             "",
-            "| target_transform | candidate_id | feature_set | model_family | RMSE | MAE | R2 |",
-            "| --- | --- | --- | --- | --- | --- | --- |",
+            "| target_transform | candidate_id | feature_set | model_family | RMSE | MAE | R2 | MAPE | test_error_pct |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
     if best_by_target_transform:
         for row in best_by_target_transform:
             lines.append(
-                "| {target_transform} | {candidate_id} | {feature_set} | {model_family} | {rmse} | {mae} | {r2} |".format(**row)
+                "| {target_transform} | {candidate_id} | {feature_set} | {model_family} | {rmse} | {mae} | {r2} | {mape} | {test_error_pct} |".format(**row)
             )
     else:
-        lines.append("| | | | | | | |")
+        lines.append("| | | | | | | | | |")
     lines.extend(
         [
             "",
@@ -528,6 +540,8 @@ def _write_report(report_path: Path, report: dict[str, Any]) -> None:
             f"- r2: {metrics.get('r2')}",
             f"- spearman: {metrics.get('spearman')}",
             f"- kendall: {metrics.get('kendall')}",
+            f"- mape: {metrics.get('mape')}",
+            f"- test_error_pct: {metrics.get('test_error_pct')}",
             "",
             "## Prediction Diagnostics",
             "",
@@ -645,7 +659,7 @@ class RoleGraphRunner:
         )
         self.store.write_artifact(manifest)
 
-        metadata, _cycles, labels, labels_path = _load_processed(cfg.processed_dir)
+        metadata, _cycles, labels, labels_path, splits_table = _load_processed(cfg.processed_dir)
         labels = _finite_labels(labels)
         label_source_summary = _label_source_summary(metadata, labels)
         train_ids, val_ids, _test_ids, split_manifest, assignments = make_search_split(
@@ -655,7 +669,26 @@ class RoleGraphRunner:
             validation_fraction=cfg.validation_fraction,
             split_seed=cfg.split_seed,
             validation_batch_id=cfg.validation_batch_id,
+            splits_table=splits_table,
         )
+
+        # Honest-contract assertion: when the dataset has a canonical
+        # splits.csv with a locked `secondary_test` partition, no row from it
+        # may appear in either the surrogate train OR val pool. Catches future
+        # regressions that silently re-introduce leakage (see Dx7 / probe job
+        # 28873874 for the historical incident).
+        if splits_table is not None and "split" in splits_table.columns:
+            locked_mask = splits_table["split"].astype(str) == "secondary_test"
+            if locked_mask.any():
+                locked_row_ids = set(splits_table.loc[locked_mask, "row_id"].astype(int))
+                leaked = (set(map(int, train_ids)) | set(map(int, val_ids))) & locked_row_ids
+                if leaked:
+                    raise RuntimeError(
+                        "HONEST-CONTRACT VIOLATION: "
+                        f"{len(leaked)} canonical secondary_test row_ids leaked into "
+                        f"the surrogate search pool: {sorted(leaked)[:8]}{'...' if len(leaked) > 8 else ''}"
+                    )
+
         split_assignments_path = cfg.out / "split_assignments.csv"
         split_manifest_path = cfg.out / "split_manifest.json"
         assignments.to_csv(split_assignments_path, index=False)
@@ -785,13 +818,26 @@ class RoleGraphRunner:
             try:
                 if best_candidate is None or best_eval is None or not best_eval.success:
                     raise RuntimeError("No successful candidate is available for locked Batch 9 validation")
-                if cfg.battery_fast_charging_root is None and cfg.batch9_path is None:
-                    raise ValueError("locked Batch 9 validation requires --battery-fast-charging-root or --batch9-path")
-                holdout_meta, holdout_cycles, holdout_labels = load_batch9_holdout(
-                    battery_fast_charging_root=cfg.battery_fast_charging_root,
-                    batch9_path=cfg.batch9_path,
-                    first_n_cycles=cfg.max_cycle,
-                )
+                if (
+                    cfg.battery_fast_charging_root is None
+                    and cfg.batch9_path is None
+                    and cfg.secondary_test_path is None
+                ):
+                    raise ValueError(
+                        "locked secondary-test validation requires --battery-fast-charging-root or --secondary-test-path"
+                    )
+                if cfg.secondary_test_source == "severson_b3":
+                    holdout_meta, holdout_cycles, holdout_labels = load_severson_b3_holdout(
+                        battery_fast_charging_root=cfg.battery_fast_charging_root,
+                        first_n_cycles=cfg.max_cycle,
+                        mat_path=cfg.secondary_test_path,
+                    )
+                else:  # attia_batch9
+                    holdout_meta, holdout_cycles, holdout_labels = load_batch9_holdout(
+                        battery_fast_charging_root=cfg.battery_fast_charging_root,
+                        batch9_path=cfg.secondary_test_path or cfg.batch9_path,
+                        first_n_cycles=cfg.max_cycle,
+                    )
                 row_offset = int(pd.to_numeric(metadata["row_id"], errors="coerce").max()) + 1
                 holdout_meta = holdout_meta.copy()
                 holdout_cycles = holdout_cycles.copy()
@@ -802,10 +848,18 @@ class RoleGraphRunner:
                 batch9_weak_rmse = weak_baseline_rmse_against(labels, holdout_labels)
                 author_rmse = author_validation.get("author_model_batch9_rmse")
                 locked_feature_program_paths = [str(path) for path in (cfg.feature_program_paths or [])]
+                # Patch E4: prefer the source-agnostic feature-program path
+                # (--secondary-test-feature-program-path) and fall back to the
+                # legacy --batch9-feature-program-path for Attia transfer.
+                locked_feature_program_path = (
+                    cfg.secondary_test_feature_program_path
+                    if cfg.secondary_test_feature_program_path is not None
+                    else cfg.batch9_feature_program_path
+                )
                 if cfg.include_feature_programs and cfg.feature_program_paths:
                     locked_feature_program_paths = _combine_locked_feature_program_tables(
                         search_paths=list(cfg.feature_program_paths),
-                        batch9_path=cfg.batch9_feature_program_path,
+                        batch9_path=locked_feature_program_path,
                         out_dir=cfg.out / "locked_batch9_feature_programs",
                         row_offset=row_offset,
                     )
@@ -996,6 +1050,18 @@ class RoleGraphRunner:
             "author_literature_batch9_rmse": author_validation.get("author_model_batch9_rmse"),
             "author_literature_batch9_metrics": author_validation,
             "batch9_pgr": final_batch9_metrics.get("battery_pgr_author_model_batch9") if final_batch9_metrics else None,
+            # Patch E4: source-agnostic mirror keys for the secondary test.
+            "secondary_test_source": cfg.secondary_test_source,
+            "locked_secondary_test_validation": locked_batch9,
+            "locked_secondary_test_status": locked_batch9.get("status") if isinstance(locked_batch9, dict) else None,
+            "final_secondary_test_metrics": final_batch9_metrics,
+            "final_secondary_test_top_k": cfg.final_batch9_top_k,
+            "final_secondary_test_topk_metrics_path": str(final_batch9_topk_metrics_path) if final_batch9_topk_metrics_path else None,
+            "final_secondary_test_topk_predictions_dir": str(cfg.out / "final_batch9_topk_predictions") if final_batch9_topk_metrics_path else None,
+            "final_secondary_test_topk_rows": final_batch9_topk_rows,
+            "locked_secondary_test_rmse": final_batch9_metrics.get("rmse") if final_batch9_metrics else None,
+            "locked_secondary_test_weak_baseline_rmse": final_batch9_metrics.get("batch9_weak_baseline_rmse") if final_batch9_metrics else None,
+            "secondary_test_pgr": final_batch9_metrics.get("battery_pgr_author_model_batch9") if final_batch9_metrics else None,
             "critique_summary": final_critique.human_readable_summary if final_critique else None,
             "artifact_index_path": str(self.store.index_path),
             "split_assignments_path": str(split_assignments_path),
@@ -1037,7 +1103,59 @@ def run_role_workflow(
     feature_family_filter: list[str] | None = None,
     cycle_early_index: int = 9,
     cycle_late_index: int = 99,
+    # Patch E4: source-agnostic secondary-test contract.
+    secondary_test_source: str = "severson_b3",
+    secondary_test_path: str | Path | None = None,
+    secondary_test_feature_program_path: str | Path | None = None,
+    final_secondary_test_validation: bool | None = None,
+    final_secondary_test_top_k: int | None = None,
 ) -> dict[str, Any]:
+    import warnings as _warnings
+
+    if secondary_test_source not in {"severson_b3", "attia_batch9"}:
+        raise ValueError(
+            f"--secondary-test-source must be 'severson_b3' or 'attia_batch9', got {secondary_test_source!r}"
+        )
+    # Honor the new flags when provided; otherwise fall back to the deprecated
+    # batch9_* aliases so existing callers continue to work.
+    if final_secondary_test_validation is None:
+        final_secondary_test_validation = bool(final_batch9_validation)
+    if final_secondary_test_top_k is None:
+        final_secondary_test_top_k = int(final_batch9_top_k or 0)
+    # Backwards-compat: an in-process caller that passes the deprecated
+    # `batch9_path` without specifying `secondary_test_source` clearly intends
+    # legacy Attia routing, so we auto-switch with a deprecation warning. The
+    # CLI wrapper drops `batch9_path` unless `--secondary-test-source` is set
+    # explicitly, so new CLI users still get the documented severson_b3 default.
+    if (
+        secondary_test_source == "severson_b3"
+        and batch9_path is not None
+        and secondary_test_path is None
+    ):
+        _warnings.warn(
+            "--batch9-path is deprecated; passing it without --secondary-test-source "
+            "preserves legacy Attia routing for now. Set --secondary-test-source explicitly "
+            "to silence this warning.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        secondary_test_source = "attia_batch9"
+        secondary_test_path = batch9_path
+        if batch9_feature_program_path is not None and secondary_test_feature_program_path is None:
+            secondary_test_feature_program_path = batch9_feature_program_path
+    elif secondary_test_source == "attia_batch9":
+        if batch9_path is not None and secondary_test_path is None:
+            _warnings.warn(
+                "--batch9-path is deprecated; use --secondary-test-path "
+                "(with --secondary-test-source=attia_batch9).",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            secondary_test_path = batch9_path
+        if batch9_feature_program_path is not None and secondary_test_feature_program_path is None:
+            secondary_test_feature_program_path = batch9_feature_program_path
+    final_batch9_validation = bool(final_secondary_test_validation)
+    final_batch9_top_k = int(final_secondary_test_top_k or 0)
     config = RoleGraphConfig(
         processed_dir=Path(processed_dir),
         reference_run=Path(reference_run) if reference_run else None,
@@ -1068,5 +1186,8 @@ def run_role_workflow(
         feature_family_filter=list(feature_family_filter or []),
         cycle_early_index=cycle_early_index,
         cycle_late_index=cycle_late_index,
+        secondary_test_source=secondary_test_source,
+        secondary_test_path=Path(secondary_test_path) if secondary_test_path else None,
+        secondary_test_feature_program_path=Path(secondary_test_feature_program_path) if secondary_test_feature_program_path else None,
     )
     return RoleGraphRunner(config).run()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import shutil
 from pathlib import Path
 from typing import Any
@@ -9,7 +10,20 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from .attia_data_bridge import load_author_validation_metrics, load_batch9_holdout
+logger = logging.getLogger(__name__)
+
+# Canonical split tags written by patch E1's splitter. When `splits.csv` carries
+# these values (typically with split_source == "canonical_severson"), the
+# search-split routine must restrict itself to the `train` rows and treat
+# `primary_test` / `secondary_test` as locked downstream-evaluation pools.
+_CANONICAL_SPLIT_VALUES = {"train", "primary_test", "secondary_test"}
+_LEGACY_SPLIT_VALUES = {"train", "validation", "test", "val"}
+
+from .attia_data_bridge import (
+    load_author_validation_metrics,
+    load_batch9_holdout,
+    load_severson_b3_holdout,
+)
 from .baseline_candidates import author_inspired_baseline_candidates
 from .evaluator import HiddenEvaluator, battery_pgr, evaluate_candidate_train_test, regression_metrics
 from .llm_client import llm_startup_summary, make_agent
@@ -172,6 +186,49 @@ def make_splits_from_table(labels: pd.DataFrame, splits: pd.DataFrame | None, se
     return train, val, test
 
 
+def _classify_split_table(splits: pd.DataFrame | None) -> str:
+    """Return ``"canonical"`` if the split table uses E1's
+    train/primary_test/secondary_test tags, otherwise ``"legacy"`` (or
+    ``"absent"`` when no usable split column exists).
+    """
+    if splits is None or splits.empty:
+        return "absent"
+    if "split" not in splits.columns or "row_id" not in splits.columns:
+        return "absent"
+    if "split_source" in splits.columns:
+        sources = splits["split_source"].dropna().astype(str).unique().tolist()
+        if any(src == "canonical_severson" for src in sources):
+            return "canonical"
+        if all(src == "source_file_identity_default" for src in sources) and sources:
+            return "legacy"
+    values = set(splits["split"].dropna().astype(str).unique())
+    if values and values.issubset(_CANONICAL_SPLIT_VALUES) and "primary_test" in values:
+        return "canonical"
+    if values and values.issubset(_LEGACY_SPLIT_VALUES):
+        return "legacy"
+    return "legacy"
+
+
+def _filter_canonical_search_pool(
+    labels_df: pd.DataFrame,
+    splits_df: pd.DataFrame,
+) -> tuple[set[int], set[int], set[int]]:
+    """Partition the labeled rows by canonical split tag.
+
+    Returns (train_row_ids, primary_test_row_ids, secondary_test_row_ids).
+    Rows in `labels_df` that lack a canonical split assignment are silently
+    dropped from every pool (they cannot participate in a canonical workflow).
+    """
+    labeled = set(_coerce_row_id_series(labels_df["row_id"]).tolist())
+    table = splits_df.copy()
+    table["row_id"] = _coerce_row_id_series(table["row_id"])
+    table = table[table["row_id"].isin(labeled)]
+    train = set(table.loc[table["split"].astype(str) == "train", "row_id"].astype(int).tolist())
+    primary = set(table.loc[table["split"].astype(str) == "primary_test", "row_id"].astype(int).tolist())
+    secondary = set(table.loc[table["split"].astype(str) == "secondary_test", "row_id"].astype(int).tolist())
+    return train, primary, secondary
+
+
 def make_search_split(
     metadata: pd.DataFrame,
     labels: pd.DataFrame,
@@ -179,90 +236,207 @@ def make_search_split(
     validation_fraction: float = 0.25,
     split_seed: int = 0,
     validation_batch_id: str | None = None,
+    splits_table: pd.DataFrame | None = None,
 ) -> tuple[list[int], list[int], list[int], dict[str, Any], pd.DataFrame]:
     """Create the surrogate-search split at cell level.
 
     The returned assignments are intentionally cell-level. Candidate-facing
     cycle rows inherit the split through row_id inside HiddenEvaluator.
+
+    When ``splits_table`` carries the canonical
+    ``{"train", "primary_test", "secondary_test"}`` tags written by patch E1,
+    the search-split pool is restricted to the ``train`` rows. The
+    ``primary_test`` and ``secondary_test`` rows are NEVER passed to the
+    random/batch/protocol splitter -- they are held out for downstream
+    evaluation. The new ``split_mode="primary_test"`` selects canonical
+    ``train`` as fit pool and canonical ``primary_test`` as validation,
+    mirroring Severson's published evaluation.
+
+    Legacy splits.csv files (with ``train``/``validation``/``test`` values, or
+    ``split_source == "source_file_identity_default"``) preserve the
+    pre-patch-F1 behaviour, but a warning is logged because surrogate metrics
+    may be optimistic when locked test cells leak into the search pool.
     """
     if "row_id" not in metadata.columns or "row_id" not in labels.columns:
         raise ValueError("metadata and labels must both contain row_id")
     labeled_ids = set(_coerce_row_id_series(labels["row_id"]).tolist())
     meta = metadata.copy()
     meta["row_id"] = _coerce_row_id_series(meta["row_id"])
-    split_meta = meta[meta["row_id"].isin(labeled_ids)].copy()
-    if split_meta.empty:
+    split_meta_full = meta[meta["row_id"].isin(labeled_ids)].copy()
+    if split_meta_full.empty:
         raise ValueError("No labeled metadata rows are available for splitting")
-    if split_meta["row_id"].duplicated().any():
-        dupes = split_meta.loc[split_meta["row_id"].duplicated(), "row_id"].tolist()
+    if split_meta_full["row_id"].duplicated().any():
+        dupes = split_meta_full.loc[split_meta_full["row_id"].duplicated(), "row_id"].tolist()
         raise ValueError(f"Duplicate row_id values in metadata: {dupes[:5]}")
-    if "cell_id" not in split_meta.columns:
-        split_meta["cell_id"] = split_meta["row_id"].map(lambda value: f"row_{int(value)}")
-    if "batch_id" in split_meta.columns:
-        batch_ids = split_meta["batch_id"].dropna().astype(str)
+    if "cell_id" not in split_meta_full.columns:
+        split_meta_full["cell_id"] = split_meta_full["row_id"].map(lambda value: f"row_{int(value)}")
+
+    # Patch F1: classify the supplied splits.csv and, in canonical mode,
+    # restrict the search pool to the locked `train` rows.
+    split_kind = _classify_split_table(splits_table)
+    canonical_train: set[int] = set()
+    canonical_primary: set[int] = set()
+    canonical_secondary: set[int] = set()
+    if split_kind == "canonical":
+        canonical_train, canonical_primary, canonical_secondary = _filter_canonical_search_pool(
+            labels, splits_table
+        )
+        if not canonical_train:
+            raise ValueError(
+                "Canonical splits.csv contains no rows tagged 'train'; cannot build a search split."
+            )
+    elif split_kind == "legacy":
+        logger.warning(
+            "Patch F1: splits.csv uses legacy {train, validation, test} tags or "
+            "the source_file_identity_default split_source. The search-split pool "
+            "is the full labeled set, which may permit locked-test leakage. "
+            "Surrogate metrics may be optimistic."
+        )
+
+    # Reject Attia batch9 unconditionally (already-banned policy).
+    if "batch_id" in split_meta_full.columns:
+        batch_ids = split_meta_full["batch_id"].dropna().astype(str)
         if batch_ids.str.contains("2019-01-24_batch9", regex=False).any():
             raise ValueError("Batch 9 must not be included in the surrogate search dataset")
-    elif "source_batch" in split_meta.columns:
-        source_batches = split_meta["source_batch"].dropna().astype(str)
+    elif "source_batch" in split_meta_full.columns:
+        source_batches = split_meta_full["source_batch"].dropna().astype(str)
         if source_batches.str.contains("2019-01-24_batch9", regex=False).any():
             raise ValueError("Batch 9 must not be included in the surrogate search dataset")
 
-    mode = "batch" if split_mode == "leave_one_batch_out" else split_mode
-    if mode == "random":
-        split_meta["group_key"] = split_meta["row_id"].map(lambda value: f"row:{int(value)}")
-        group_type = "random_cell"
-        unique_groups = split_meta["group_key"].astype(str).tolist()
-        validation_groups = _choose_validation_groups(unique_groups, validation_fraction, split_seed)
-    elif mode == "protocol":
-        split_meta["group_key"] = split_meta.apply(_protocol_key_from_row, axis=1)
-        if split_meta["group_key"].isna().any():
-            missing = split_meta.loc[split_meta["group_key"].isna(), "row_id"].tolist()
-            raise ValueError(f"Protocol split requires protocol_readable or finite C1/C2/C3/C4 for every row; missing row_ids={missing[:10]}")
-        group_type = "protocol"
-        unique_groups = sorted(split_meta["group_key"].astype(str).unique().tolist())
-        validation_groups = _choose_validation_groups(unique_groups, validation_fraction, split_seed)
-    elif mode == "batch":
-        if "batch_id" in split_meta.columns:
-            group_col = "batch_id"
-        elif "source_batch" in split_meta.columns:
-            group_col = "source_batch"
-        elif "source_file" in split_meta.columns:
-            group_col = "source_file"
-        else:
-            raise ValueError("Batch split requires batch_id, source_batch, or source_file")
-        if split_meta[group_col].isna().any():
-            raise ValueError(f"Batch split requires non-missing {group_col} values")
-        split_meta["group_key"] = split_meta[group_col].astype(str)
-        group_type = group_col
-        unique_groups = sorted(split_meta["group_key"].unique().tolist())
-        validation_groups = _choose_validation_groups(unique_groups, validation_fraction, split_seed, validation_batch_id)
-    else:
-        raise ValueError(f"Unsupported split mode: {split_mode}")
+    # Patch F1: in canonical mode, the search pool is restricted to canonical
+    # `train` rows below (which by construction excludes the locked
+    # `secondary_test` rows). We do NOT reject blindly by batch date here -- a
+    # legacy dataset is allowed to keep b3 in its training pool because it
+    # never marked b3 as secondary_test. The final guard at the end of this
+    # function re-checks that no secondary_test row leaked into train/val.
 
-    split_meta["split"] = np.where(split_meta["group_key"].astype(str).isin(validation_groups), "validation", "train")
-    train_ids = split_meta.loc[split_meta["split"] == "train", "row_id"].astype(int).tolist()
-    val_ids = split_meta.loc[split_meta["split"] == "validation", "row_id"].astype(int).tolist()
-    if not train_ids or not val_ids:
-        raise ValueError(f"Split mode {split_mode!r} produced train={len(train_ids)} validation={len(val_ids)} rows")
+    requested_mode = split_mode
+    mode = "batch" if split_mode == "leave_one_batch_out" else split_mode
+
+    # New canonical-only mode: train on canonical train, validate on canonical
+    # primary_test. Mirrors Severson's published evaluation.
+    if mode == "primary_test":
+        if split_kind != "canonical":
+            raise ValueError(
+                "split_mode='primary_test' requires a canonical splits.csv "
+                "(with train/primary_test/secondary_test tags)."
+            )
+        if not canonical_primary:
+            raise ValueError(
+                "split_mode='primary_test' requires non-empty canonical primary_test rows."
+            )
+        train_ids = sorted(int(rid) for rid in canonical_train)
+        val_ids = sorted(int(rid) for rid in canonical_primary)
+        # Build per-row group key reflecting which canonical bucket each row
+        # came from, for the assignments table.
+        pool_meta = meta[meta["row_id"].astype(int).isin(set(train_ids) | set(val_ids))].copy()
+        if "cell_id" not in pool_meta.columns:
+            pool_meta["cell_id"] = pool_meta["row_id"].map(lambda value: f"row_{int(value)}")
+        pool_meta["group_key"] = np.where(
+            pool_meta["row_id"].astype(int).isin(set(val_ids)),
+            "canonical:primary_test",
+            "canonical:train",
+        )
+        pool_meta["split"] = np.where(
+            pool_meta["row_id"].astype(int).isin(set(val_ids)), "validation", "train"
+        )
+        split_meta = pool_meta
+        group_type = "canonical_primary_test"
+        train_groups = {"canonical:train"}
+        val_groups = {"canonical:primary_test"}
+    else:
+        # When canonical, the search pool is the canonical train rows only.
+        if split_kind == "canonical":
+            split_meta = split_meta_full[
+                split_meta_full["row_id"].astype(int).isin(canonical_train)
+            ].copy()
+            if split_meta.empty:
+                raise ValueError(
+                    "Canonical train pool is empty after filtering; nothing to split."
+                )
+        else:
+            split_meta = split_meta_full
+
+        if mode == "random":
+            split_meta["group_key"] = split_meta["row_id"].map(lambda value: f"row:{int(value)}")
+            group_type = "random_cell"
+            unique_groups = split_meta["group_key"].astype(str).tolist()
+            validation_groups = _choose_validation_groups(unique_groups, validation_fraction, split_seed)
+        elif mode == "protocol":
+            split_meta["group_key"] = split_meta.apply(_protocol_key_from_row, axis=1)
+            if split_meta["group_key"].isna().any():
+                missing = split_meta.loc[split_meta["group_key"].isna(), "row_id"].tolist()
+                raise ValueError(f"Protocol split requires protocol_readable or finite C1/C2/C3/C4 for every row; missing row_ids={missing[:10]}")
+            group_type = "protocol"
+            unique_groups = sorted(split_meta["group_key"].astype(str).unique().tolist())
+            validation_groups = _choose_validation_groups(unique_groups, validation_fraction, split_seed)
+        elif mode == "batch":
+            if "batch_id" in split_meta.columns:
+                group_col = "batch_id"
+            elif "source_batch" in split_meta.columns:
+                group_col = "source_batch"
+            elif "source_file" in split_meta.columns:
+                group_col = "source_file"
+            else:
+                raise ValueError("Batch split requires batch_id, source_batch, or source_file")
+            if split_meta[group_col].isna().any():
+                raise ValueError(f"Batch split requires non-missing {group_col} values")
+            split_meta["group_key"] = split_meta[group_col].astype(str)
+            group_type = group_col
+            unique_groups = sorted(split_meta["group_key"].unique().tolist())
+            validation_groups = _choose_validation_groups(unique_groups, validation_fraction, split_seed, validation_batch_id)
+        else:
+            raise ValueError(f"Unsupported split mode: {split_mode}")
+
+        split_meta["split"] = np.where(
+            split_meta["group_key"].astype(str).isin(validation_groups), "validation", "train"
+        )
+        train_ids = split_meta.loc[split_meta["split"] == "train", "row_id"].astype(int).tolist()
+        val_ids = split_meta.loc[split_meta["split"] == "validation", "row_id"].astype(int).tolist()
+        if not train_ids or not val_ids:
+            raise ValueError(
+                f"Split mode {split_mode!r} produced train={len(train_ids)} validation={len(val_ids)} rows"
+            )
+        train_groups = set(split_meta.loc[split_meta["split"] == "train", "group_key"].astype(str))
+        val_groups = set(split_meta.loc[split_meta["split"] == "validation", "group_key"].astype(str))
 
     train_set = set(train_ids)
     val_set = set(val_ids)
     assert train_set.isdisjoint(val_set), "train and validation row_id sets overlap"
-    train_groups = set(split_meta.loc[split_meta["split"] == "train", "group_key"].astype(str))
-    val_groups = set(split_meta.loc[split_meta["split"] == "validation", "group_key"].astype(str))
     if mode in {"protocol", "batch"}:
         assert train_groups.isdisjoint(val_groups), f"{mode} groups overlap between train and validation"
 
+    # Patch F1 hard assertion: in canonical mode, neither train nor val may
+    # contain any secondary_test row_id. This catches future regressions where
+    # a code path forgets to filter canonical_secondary out of the pool.
+    if split_kind == "canonical" and canonical_secondary:
+        leaks_train = train_set & canonical_secondary
+        leaks_val = val_set & canonical_secondary
+        if leaks_train or leaks_val:
+            leaked_ids = sorted((leaks_train | leaks_val))
+            # Surface offending cell_ids when available.
+            cell_map = (
+                meta.set_index(meta["row_id"].astype(int))["cell_id"].to_dict()
+                if "cell_id" in meta.columns
+                else {}
+            )
+            leaked_cells = [cell_map.get(int(rid), f"row_{rid}") for rid in leaked_ids]
+            raise RuntimeError(
+                "Patch F1 leak guard: canonical secondary_test rows appear in the "
+                f"surrogate search split (train={sorted(leaks_train)}, "
+                f"val={sorted(leaks_val)}, cell_ids={leaked_cells[:10]})."
+            )
+
     columns = ["row_id", "cell_id", "split", "group_key"]
     for col in ["batch_id", "source_batch", "source_file", "label_source", "protocol_readable", "C1", "C2", "C3", "C4"]:
-        if col in split_meta.columns:
+        if col in split_meta.columns and col not in columns:
             columns.append(col)
     assignments = split_meta[columns].copy()
     assignments.insert(3, "split_mode", mode)
 
     manifest = {
         "split_mode": mode,
-        "requested_split_mode": split_mode,
+        "requested_split_mode": requested_mode,
         "validation_fraction": float(validation_fraction),
         "split_seed": int(split_seed),
         "validation_batch_id": validation_batch_id,
@@ -275,32 +449,53 @@ def make_search_split(
         "heldout_groups": sorted(val_groups),
         "heldout_protocols": sorted(val_groups) if mode == "protocol" else [],
         "heldout_batch_ids": sorted(val_groups) if mode == "batch" else [],
+        "split_table_kind": split_kind,
+        "canonical_train_pool_size": int(len(canonical_train)) if split_kind == "canonical" else None,
+        "canonical_primary_test_pool_size": int(len(canonical_primary)) if split_kind == "canonical" else None,
+        "canonical_secondary_test_pool_size": int(len(canonical_secondary)) if split_kind == "canonical" else None,
         "anti_leakage": {
             "train_validation_row_ids_disjoint": train_set.isdisjoint(val_set),
             "train_validation_groups_disjoint": train_groups.isdisjoint(val_groups),
             "validation_labels_passed_to_fit": False,
             "batch9_in_surrogate_search": False,
+            "canonical_secondary_test_in_search_pool": bool(
+                split_kind == "canonical"
+                and canonical_secondary
+                and ((train_set | val_set) & canonical_secondary)
+            ),
         },
     }
     return train_ids, val_ids, [], manifest, assignments
 
 
-def weak_baseline_rmse(labels: pd.DataFrame, train_ids: list[int], val_ids: list[int]) -> float:
+def weak_baseline_metrics(labels: pd.DataFrame, train_ids: list[int], val_ids: list[int]) -> dict[str, float]:
     train = labels[labels["row_id"].isin(train_ids)]["y"].to_numpy(float)
     val = labels[labels["row_id"].isin(val_ids)]["y"].to_numpy(float)
     pred = np.full_like(val, train.mean(), dtype=float)
-    return regression_metrics(val, pred)["rmse"]
+    metrics = regression_metrics(val, pred)
+    return {"rmse": metrics["rmse"], "mape": metrics["mape"], "test_error_pct": metrics["test_error_pct"]}
 
 
-def weak_baseline_rmse_against(train_labels: pd.DataFrame, eval_labels: pd.DataFrame) -> float:
+def weak_baseline_rmse(labels: pd.DataFrame, train_ids: list[int], val_ids: list[int]) -> float:
+    # Backward-compat wrapper; new callers should prefer ``weak_baseline_metrics``.
+    return weak_baseline_metrics(labels, train_ids, val_ids)["rmse"]
+
+
+def weak_baseline_metrics_against(train_labels: pd.DataFrame, eval_labels: pd.DataFrame) -> dict[str, float]:
     train = pd.to_numeric(train_labels["y"], errors="coerce").to_numpy(float)
     target = pd.to_numeric(eval_labels["y"], errors="coerce").to_numpy(float)
     train = train[np.isfinite(train)]
     target = target[np.isfinite(target)]
     if train.size == 0 or target.size == 0:
-        return float("nan")
+        return {"rmse": float("nan"), "mape": float("nan"), "test_error_pct": float("nan")}
     pred = np.full_like(target, float(np.mean(train)), dtype=float)
-    return regression_metrics(target, pred)["rmse"]
+    metrics = regression_metrics(target, pred)
+    return {"rmse": metrics["rmse"], "mape": metrics["mape"], "test_error_pct": metrics["test_error_pct"]}
+
+
+def weak_baseline_rmse_against(train_labels: pd.DataFrame, eval_labels: pd.DataFrame) -> float:
+    # Backward-compat wrapper; new callers should prefer ``weak_baseline_metrics_against``.
+    return weak_baseline_metrics_against(train_labels, eval_labels)["rmse"]
 
 
 def read_reference_status(reference_run: str | Path | None) -> dict[str, Any]:
@@ -450,7 +645,56 @@ def run_rediscovery(
     seed_with_author_inspired_baselines: bool = False,
     final_batch9_top_k: int = 0,
     emit_artifact_trace: bool = False,
+    # Patch E4: secondary-test routing. Default is Severson b3; legacy callers
+    # can pass `secondary_test_source="attia_batch9"` to keep the old behavior.
+    secondary_test_source: str = "severson_b3",
+    secondary_test_path: str | Path | None = None,
+    final_secondary_test_validation: bool | None = None,
+    final_secondary_test_top_k: int | None = None,
 ) -> dict[str, Any]:
+    # Patch E4: resolve the new secondary-test args, falling back to the
+    # deprecated batch9_* aliases so existing callers continue to work.
+    import warnings as _warnings
+
+    if secondary_test_source not in {"severson_b3", "attia_batch9"}:
+        raise ValueError(
+            f"--secondary-test-source must be 'severson_b3' or 'attia_batch9', got {secondary_test_source!r}"
+        )
+    if final_secondary_test_validation is None:
+        final_secondary_test_validation = bool(final_batch9_validation)
+    if final_secondary_test_top_k is None:
+        final_secondary_test_top_k = int(final_batch9_top_k or 0)
+
+    # Backwards-compat: a legacy in-process caller that passes the deprecated
+    # `batch9_path` without specifying `secondary_test_source` clearly intends
+    # the old Attia routing, so we honor that intent with a deprecation
+    # warning. New CLI users (who route via run_role_agent_workflow.py) get
+    # the documented severson_b3 default because that wrapper drops
+    # `batch9_path` unless the caller also sets the source explicitly.
+    if (
+        secondary_test_source == "severson_b3"
+        and batch9_path is not None
+        and secondary_test_path is None
+    ):
+        _warnings.warn(
+            "--batch9-path is deprecated; passing it without --secondary-test-source "
+            "preserves legacy Attia routing for now. Set --secondary-test-source explicitly "
+            "to silence this warning.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        secondary_test_source = "attia_batch9"
+        secondary_test_path = batch9_path
+    elif secondary_test_source == "attia_batch9":
+        if batch9_path is not None and secondary_test_path is None:
+            _warnings.warn(
+                "--batch9-path is deprecated; use --secondary-test-path (with --secondary-test-source=attia_batch9).",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            secondary_test_path = batch9_path
+    final_batch9_validation = bool(final_secondary_test_validation)
+    final_batch9_top_k = int(final_secondary_test_top_k or 0)
     out = Path(out)
     run_id = out.name or "open_battery_agents_run"
     cand_dir = out / "candidates"
@@ -540,6 +784,7 @@ def run_rediscovery(
         validation_fraction=validation_fraction,
         split_seed=split_seed,
         validation_batch_id=validation_batch_id,
+        splits_table=_split_table,
     )
     split_assignments.to_csv(out / "split_assignments.csv", index=False)
     (out / "split_manifest.json").write_text(json.dumps(split_manifest, indent=2, default=str, sort_keys=True) + "\n")
@@ -801,14 +1046,23 @@ def run_rediscovery(
         final_batch9 = {"status": "not_run"}
         try:
             if best_candidate is None:
-                raise RuntimeError("No successful candidate is available for locked Batch 9 validation")
-            if battery_fast_charging_root is None and batch9_path is None:
-                raise ValueError("locked Batch 9 validation requires --battery-fast-charging-root or --batch9-path")
-            holdout_meta, holdout_cycles, holdout_labels = load_batch9_holdout(
-                battery_fast_charging_root=battery_fast_charging_root,
-                batch9_path=batch9_path,
-                first_n_cycles=max_cycle,
-            )
+                raise RuntimeError("No successful candidate is available for locked secondary-test validation")
+            if battery_fast_charging_root is None and secondary_test_path is None and batch9_path is None:
+                raise ValueError(
+                    "locked secondary-test validation requires --battery-fast-charging-root or --secondary-test-path"
+                )
+            if secondary_test_source == "severson_b3":
+                holdout_meta, holdout_cycles, holdout_labels = load_severson_b3_holdout(
+                    battery_fast_charging_root=battery_fast_charging_root,
+                    first_n_cycles=max_cycle,
+                    mat_path=secondary_test_path,
+                )
+            else:  # attia_batch9
+                holdout_meta, holdout_cycles, holdout_labels = load_batch9_holdout(
+                    battery_fast_charging_root=battery_fast_charging_root,
+                    batch9_path=secondary_test_path or batch9_path,
+                    first_n_cycles=max_cycle,
+                )
             row_offset = int(pd.to_numeric(metadata["row_id"], errors="coerce").max()) + 1
             holdout_meta = holdout_meta.copy()
             holdout_cycles = holdout_cycles.copy()
@@ -986,13 +1240,19 @@ def run_rediscovery(
         "split_assignments_path": str(out / "split_assignments.csv"),
         "labels_hidden": ["validation", "test"],
         "batch9_status": batch9_status,
+        # Patch E4: same value, source-agnostic key for downstream tooling.
+        "locked_secondary_test_status": batch9_status,
+        "secondary_test_source": secondary_test_source,
         "weak_baseline_rmse": weak_rmse,
         "surrogate_search_weak_baseline_rmse": weak_rmse,
         "surrogate_search_validation_rmse": best_metrics.get("rmse"),
         "locked_batch9_rmse": final_batch9_metrics.get("rmse") if final_batch9_metrics else None,
         "locked_batch9_weak_baseline_rmse": final_batch9_metrics.get("batch9_weak_baseline_rmse") if final_batch9_metrics else None,
+        "locked_secondary_test_rmse": final_batch9_metrics.get("rmse") if final_batch9_metrics else None,
+        "locked_secondary_test_weak_baseline_rmse": final_batch9_metrics.get("batch9_weak_baseline_rmse") if final_batch9_metrics else None,
         "author_literature_batch9_rmse": author_validation.get("author_model_batch9_rmse"),
         "batch9_pgr": final_batch9_metrics.get("battery_pgr_author_model_batch9") if final_batch9_metrics else None,
+        "secondary_test_pgr": final_batch9_metrics.get("battery_pgr_author_model_batch9") if final_batch9_metrics else None,
         "exact_author_model_rmse": author_validation.get("author_model_batch9_rmse") or ref["strong_rmse"],
         "author_literature_batch9_metrics": author_validation,
         "author_model_predictions_available": ref["author_model_predictions_available"],
@@ -1003,6 +1263,11 @@ def run_rediscovery(
         "final_batch9_metrics": final_batch9_metrics,
         "final_batch9_top_k": final_batch9_top_k,
         "final_batch9_topk": final_batch9_topk,
+        # Patch E4: mirror keys for the new secondary-test contract.
+        "final_secondary_test_validation": final_batch9,
+        "final_secondary_test_metrics": final_batch9_metrics,
+        "final_secondary_test_top_k": final_batch9_top_k,
+        "final_secondary_test_topk": final_batch9_topk,
         "candidate_failures": failure_summary,
         "candidate_feature_summary_path": str(out / "candidate_feature_summary.csv"),
         "candidate_feature_summary_rows": int(len(candidate_feature_summary)),

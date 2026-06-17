@@ -26,14 +26,41 @@ def main() -> int:
     parser.add_argument("--allow-protocol-features", action="store_true")
     parser.add_argument("--allow-freeform-code", action="store_true")
     parser.add_argument("--candidates-per-iteration", type=int, default=1)
-    parser.add_argument("--final-batch9-validation", action="store_true")
-    parser.add_argument("--locked-test", action="store_true", help="Alias for --final-batch9-validation.")
+    parser.add_argument("--final-batch9-validation", action="store_true",
+                        help="DEPRECATED: alias for --final-secondary-test-validation when "
+                        "--secondary-test-source=attia_batch9.")
+    parser.add_argument("--locked-test", action="store_true",
+                        help="Alias for --final-batch9-validation / --final-secondary-test-validation.")
     parser.add_argument("--battery-fast-charging-root", type=Path, default=None)
-    parser.add_argument("--batch9-path", type=Path, default=None)
-    parser.add_argument("--final-batch9-top-k", type=int, default=0)
+    parser.add_argument("--batch9-path", type=Path, default=None,
+                        help="DEPRECATED: alias for --secondary-test-path when "
+                        "--secondary-test-source=attia_batch9.")
+    parser.add_argument("--final-batch9-top-k", type=int, default=0,
+                        help="DEPRECATED: alias for --final-secondary-test-top-k.")
     parser.add_argument("--feature-program-path", dest="feature_program_path", action="append", type=Path, default=[])
     parser.add_argument("--feature-program-paths", nargs="*", type=Path, default=[])
-    parser.add_argument("--batch9-feature-program-path", type=Path, default=None)
+    parser.add_argument("--batch9-feature-program-path", type=Path, default=None,
+                        help="DEPRECATED: alias for --secondary-test-feature-program-path.")
+    # Patch E4: source-agnostic secondary-test contract.
+    parser.add_argument("--secondary-test-source", choices=["severson_b3", "attia_batch9"],
+                        default="severson_b3",
+                        help="Source for the locked secondary test. Default 'severson_b3' "
+                        "switches the locked test from Attia Batch 9 (transfer-only) to "
+                        "Severson b3 (in-distribution true-life). 'attia_batch9' preserves "
+                        "the old transfer behavior.")
+    parser.add_argument("--secondary-test-path", type=Path, default=None,
+                        help="Explicit path to the secondary-test data. For severson_b3 this "
+                        "should be the .mat file (or its directory). For attia_batch9 this "
+                        "is the Batch 9 directory.")
+    parser.add_argument("--secondary-test-feature-program-path", type=Path, default=None,
+                        help="Optional feature-program table for the secondary test (replaces "
+                        "--batch9-feature-program-path).")
+    parser.add_argument("--final-secondary-test-validation", action="store_true",
+                        help="Run a single locked secondary-test validation on the best "
+                        "candidate (replaces --final-batch9-validation).")
+    parser.add_argument("--final-secondary-test-top-k", type=int, default=0,
+                        help="Top-K Severson-validated candidates to also evaluate on the "
+                        "secondary test (replaces --final-batch9-top-k).")
     parser.add_argument("--include-feature-programs", action="store_true")
     parser.add_argument("--feature-program-mode", choices=["none", "table", "auto"], default="none")
     parser.add_argument("--feature-program-recipe", default=None)
@@ -42,6 +69,28 @@ def main() -> int:
     parser.add_argument("--cycle-late-index", type=int, default=99)
     args = parser.parse_args()
     feature_program_paths = list(args.feature_program_path or []) + list(args.feature_program_paths or [])
+
+    # Patch E4: resolve deprecated aliases.
+    import warnings as _warnings
+
+    if args.batch9_path is not None:
+        _warnings.warn(
+            "--batch9-path is deprecated; use --secondary-test-path (with "
+            "--secondary-test-source=attia_batch9 to preserve transfer behavior).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+    if args.batch9_feature_program_path is not None and args.secondary_test_feature_program_path is None:
+        args.secondary_test_feature_program_path = args.batch9_feature_program_path
+    final_secondary_test_validation = bool(
+        args.final_secondary_test_validation or args.final_batch9_validation or args.locked_test
+    )
+    final_secondary_test_top_k = max(
+        int(args.final_secondary_test_top_k or 0),
+        int(args.final_batch9_top_k or 0),
+    )
+    # Legacy --batch9-path: only respected when explicitly opting in to attia.
+    legacy_batch9_path = args.batch9_path if args.secondary_test_source == "attia_batch9" else None
 
     run_role_workflow(
         processed_dir=args.processed_dir,
@@ -61,12 +110,17 @@ def main() -> int:
         allow_protocol_features=args.allow_protocol_features,
         allow_freeform_code=args.allow_freeform_code,
         candidates_per_iteration=args.candidates_per_iteration,
-        final_batch9_validation=bool(args.final_batch9_validation or args.locked_test),
+        final_batch9_validation=final_secondary_test_validation,
         battery_fast_charging_root=args.battery_fast_charging_root,
-        batch9_path=args.batch9_path,
-        final_batch9_top_k=args.final_batch9_top_k,
+        batch9_path=legacy_batch9_path,
+        final_batch9_top_k=final_secondary_test_top_k,
         feature_program_paths=feature_program_paths,
         batch9_feature_program_path=args.batch9_feature_program_path,
+        secondary_test_source=args.secondary_test_source,
+        secondary_test_path=args.secondary_test_path,
+        secondary_test_feature_program_path=args.secondary_test_feature_program_path,
+        final_secondary_test_validation=final_secondary_test_validation,
+        final_secondary_test_top_k=final_secondary_test_top_k,
         include_feature_programs=args.include_feature_programs,
         feature_program_mode=args.feature_program_mode,
         feature_program_recipe=args.feature_program_recipe,

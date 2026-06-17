@@ -74,8 +74,8 @@ def model_architect_prompt(feature_plan: dict[str, Any], dataset_profile: dict[s
 
 Use robust preprocessing. Prefer small-data regressors such as Ridge, ElasticNetCV, LassoCV, RandomForest, or GradientBoosting before neural networks.
 Candidates must drop all-NaN features or impute safely and must not use row_id/cell_id as predictors.
-Choose target_transform as either "raw" or "log10" and justify it from the target distribution, error structure, and transfer-stability considerations.
-Do not assume a paper-specific target transform or model family.
+Default to `target_transform='log10'` (matches the Severson 2019 / BatteryML convention for cycle-life regression). Only choose `'raw'` if you have a specific numerical reason (e.g. the target distribution is already approximately symmetric on the raw scale, or there are non-positive y values that block a log transform); state the reason explicitly in the rationale.
+Do not assume a paper-specific model family.
 
 Feature plan:
 {_json_block(feature_plan)}
@@ -173,6 +173,14 @@ Return only the complete repaired Python code.
 def scientist_critic_prompt(review: dict[str, Any], evaluation: dict[str, Any]) -> str:
     return f"""Write a CritiqueReport JSON object for the candidate experiment.
 
+When critiquing, explicitly examine the reported MAPE (mean absolute percentage error) and
+`test_error_pct` alongside RMSE/MAE/R2/Spearman/Kendall. Severson 2019 and follow-up battery
+literature report headline test errors in % (MAPE); a candidate with low RMSE but a MAPE that
+is much larger than the surrogate weak-baseline MAPE -- or noticeably above the ~10-15%
+literature reference band for early-life cycle-life prediction -- should be flagged as
+potentially overfitting or miscalibrated even if RMSE looks acceptable. Note in the weaknesses
+or proposed_next_steps when MAPE diverges from RMSE/R2 ranking.
+
 Review:
 {_json_block(review)}
 
@@ -226,6 +234,7 @@ Each entry in `shortlist` MUST contain these keys:
 - target_transform (string)
 - surrogate_rmse (float)
 - surrogate_mae (float)
+- surrogate_mape (float, mean absolute percentage error on the surrogate validation set; Severson 2019 / BatteryML report headline test errors in this unit)
 - surrogate_spearman (float)
 - rank_in_shortlist (int, 1-based, matching the entry's position)
 """
@@ -247,6 +256,9 @@ Default tie-breaking rule: choose the shortlist entry with the lowest `batch9_rm
 - many negative predictions for a non-negative lifetime target (`batch9_n_negative_predictions` materially > 0)
 - `batch9_rmse` much worse than the weak baseline (`batch9_rmse` >> `batch9_weak_baseline_rmse`)
 
+Informational MAPE gate (does NOT override the RMSE-based tiebreak; surface in the rationale only):
+- if `batch9_mape` > 0.30 (i.e. > 30% mean absolute percentage error) call it out in your rationale as a concern even when RMSE looks acceptable. RMSE/R2/PGR remain the hard pathology gates; do not skip an entry based on MAPE alone, but note the divergence so reviewers can audit it.
+
 If you skip an entry for pathology, name the entry and the failing check in your rationale.
 
 Shortlist with Batch 9 metrics:
@@ -256,7 +268,7 @@ Return JSON with these top-level keys:
 - agent_id (string)
 - selection_criteria (string, restate the rule you applied)
 - rationale (string, one short paragraph explaining the choice and any pathology skips)
-- final_champion (object, the chosen shortlist entry with ALL of its original fields PLUS batch9_rmse, batch9_mae, batch9_spearman, batch9_pgr; must include candidate_id and source_run_id)
+- final_champion (object, the chosen shortlist entry with ALL of its original fields PLUS batch9_rmse, batch9_mae, batch9_mape, batch9_spearman, batch9_pgr (and, when the campaign has migrated to the renamed schema, the secondary_test_rmse, secondary_test_mae, secondary_test_mape, secondary_test_spearman, secondary_test_pgr aliases as well); must include candidate_id and source_run_id)
 - runner_up (object or null, same shape as final_champion; null only if no non-pathological alternative remains)
 - shortlist_evaluated (list, the full shortlist as received, preserved verbatim for audit)
 """
