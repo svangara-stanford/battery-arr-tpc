@@ -1,5 +1,12 @@
 #!/usr/bin/env python
-"""Score already-trained Open Battery Agents candidates on the locked Batch 9 holdout.
+"""DEPRECATED scorer: trains candidates on Severson and scores on Attia Batch 9.
+
+.. warning::
+    Patch E4 switched the locked secondary test from Attia Batch 9 (transfer)
+    to Severson b3 (in-distribution). Prefer the new
+    ``scripts/score_candidates_on_severson_b3.py`` script. This script is
+    retained only for the explicit ``--secondary-test-source=attia_batch9``
+    transfer experiments.
 
 Given a JSON list of candidate specs from completed Track A runs, this script
 trains each candidate on its full Severson dataset and predicts on Batch 9 once,
@@ -268,7 +275,7 @@ def _score_one_candidate(
         recipe, cycle_early, cycle_late, first_n = _resolve_recipe_settings(entry)
         include_protocol = bool(entry.get("include_protocol_features", args.allow_protocol_features))
 
-        metadata, cycles, labels, _labels_path = _load_processed(processed_dir)
+        metadata, cycles, labels, _labels_path, _splits_table = _load_processed(processed_dir)
         labels = _finite_labels(labels)
 
         holdout_first_n = max(args.max_cycle, first_n)
@@ -396,6 +403,16 @@ def _leaderboard_row(entry: dict[str, Any], record: dict[str, Any]) -> dict[str,
 
 
 def main() -> int:
+    import warnings as _warnings
+
+    _warnings.warn(
+        "scripts/score_candidates_on_batch9.py is deprecated. The locked "
+        "secondary test now defaults to Severson b3; use "
+        "scripts/score_candidates_on_severson_b3.py unless you explicitly "
+        "want the Attia Batch 9 transfer experiment.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     args = _parse_args()
     candidates = _load_candidate_list(args.candidate_list)
     out_dir = args.out

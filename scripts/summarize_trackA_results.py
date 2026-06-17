@@ -85,6 +85,8 @@ def main() -> int:
             "best_r2": metrics.get("r2"),
             "best_spearman": metrics.get("spearman"),
             "best_kendall": metrics.get("kendall"),
+            "best_mape": metrics.get("mape"),
+            "best_test_error_pct": metrics.get("test_error_pct"),
             "best_y_true_mean": extra.get("y_true_mean"),
             "best_y_pred_mean": extra.get("y_pred_mean"),
             "locked_batch9_status": locked.get("status", "not_run"),

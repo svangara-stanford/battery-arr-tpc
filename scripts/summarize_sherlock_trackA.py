@@ -68,10 +68,22 @@ def main() -> int:
     runs = pd.read_csv(runs_csv)
     cands = pd.read_csv(cands_csv)
 
+    # Patch E4: the locked-secondary-test status is exposed under a
+    # source-agnostic key (`locked_secondary_test_status`). Fall back to the
+    # legacy `locked_batch9_status` for older summary CSVs.
+    if "locked_secondary_test_status" in runs.columns:
+        secondary_status = runs["locked_secondary_test_status"]
+        if "locked_batch9_status" in runs.columns:
+            secondary_status = secondary_status.fillna(runs["locked_batch9_status"])
+        secondary_status = secondary_status.fillna("not_run")
+    elif "locked_batch9_status" in runs.columns:
+        secondary_status = runs["locked_batch9_status"].fillna("not_run")
+    else:
+        secondary_status = pd.Series("not_run", index=runs.index)
     full_runs = runs[
         (runs["iterations"] == args.iterations)
         & (runs["candidates_per_iteration"] == args.candidates_per_iteration)
-        & (runs["locked_batch9_status"].fillna("not_run") == "not_run")
+        & (secondary_status == "not_run")
     ].copy()
 
     full_ids = set(full_runs["run_id"].dropna())
@@ -89,8 +101,8 @@ def main() -> int:
     if len(full_runs) > 0:
         cols = [c for c in [
             "run_id", "recipe", "split_mode", "split_seed", "best_rmse",
-            "best_mae", "best_spearman", "best_model_family",
-            "best_feature_set", "best_target_transform",
+            "best_mae", "best_mape", "best_test_error_pct", "best_spearman",
+            "best_model_family", "best_feature_set", "best_target_transform",
         ] if c in full_runs.columns]
         print(full_runs[cols].sort_values("best_rmse").head(30).to_string(index=False))
     return 0

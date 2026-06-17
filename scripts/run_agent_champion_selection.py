@@ -69,20 +69,30 @@ DEFAULT_AGGREGATOR_CRITERIA = (
     "(n_evals > 1) and small mean RMSE std across seeds. Avoid configurations that win in only "
     "one (recipe, split_mode, split_seed) cell unless their raw RMSE is dramatically lower than "
     "any stable rival. Do not assume any specific paper feature family. Do not request or rely "
-    "on Batch 9 information at this stage."
+    "on the locked secondary test (Severson b3 by default; Attia Batch 9 only with explicit "
+    "opt-in) at this stage."
 )
 DEFAULT_ADJUDICATOR_CRITERIA = (
-    "Pick the single best champion as argmin Batch 9 RMSE among the K shortlist entries, except: "
-    "(1) skip any entry with n_nonfinite_predictions > 0, batch9_r2 < 0, or "
-    "batch9_rmse >= batch9_weak_baseline_rmse; "
-    "(2) treat batch9_pgr <= 0 as a pathology ONLY if batch9_pgr is non-null - null/missing PGR "
-    "means the author reference is unavailable for this run and is not by itself disqualifying; "
+    "Pick the single best champion as argmin secondary-test RMSE among the K shortlist entries. "
+    "Each entry may carry both the source-agnostic keys (secondary_test_rmse, secondary_test_r2, "
+    "secondary_test_pgr, secondary_test_weak_baseline_rmse, "
+    "secondary_test_n_nonfinite_predictions, secondary_test_source) and the deprecated legacy "
+    "keys (batch9_rmse, batch9_r2, batch9_pgr, batch9_weak_baseline_rmse, "
+    "batch9_n_nonfinite_predictions) which carry the same values during the transition. "
+    "Prefer the secondary_test_* keys; fall back to batch9_* only if the source-agnostic key is "
+    "absent. Then apply: "
+    "(1) skip any entry with n_nonfinite_predictions > 0, r2 < 0, or "
+    "rmse >= weak_baseline_rmse on the secondary test; "
+    "(2) treat pgr <= 0 as a pathology ONLY if pgr is non-null - null/missing PGR means the "
+    "author reference is unavailable for this secondary-test source and is not by itself "
+    "disqualifying; "
     "(3) if all shortlist entries fail the pathology gates, choose the one with the smallest "
-    "(batch9_rmse - batch9_weak_baseline_rmse) gap and call out the failure mode in the rationale; "
-    "(4) prefer an entry whose Batch 9 RMSE is within 5% of the leader if its Severson surrogate "
-    "RMSE is also markedly better (more transfer-stable). State which (if any) shortlist entries "
-    "you skipped and why. Runner-up is the next-best non-pathological entry. Do not request any "
-    "further Batch 9 calls."
+    "(secondary_test_rmse - secondary_test_weak_baseline_rmse) gap and call out the failure mode "
+    "in the rationale; "
+    "(4) prefer an entry whose secondary-test RMSE is within 5% of the leader if its Severson "
+    "surrogate RMSE is also markedly better. State which (if any) shortlist entries you skipped "
+    "and why. Runner-up is the next-best non-pathological entry. Do not request any further "
+    "secondary-test calls."
 )
 
 
@@ -173,6 +183,10 @@ def _candidate_record(
         "include_protocol_features": bool(row.get("include_protocol_features", False)),
         "surrogate_rmse": _as_float(row.get("rmse") if "rmse" in row else row.get("best_rmse")),
         "surrogate_mae": _as_float(row.get("mae") if "mae" in row else row.get("best_mae")),
+        "surrogate_mape": _as_float(row.get("mape") if "mape" in row else row.get("best_mape")),
+        "surrogate_test_error_pct": _as_float(
+            row.get("test_error_pct") if "test_error_pct" in row else row.get("best_test_error_pct")
+        ),
         "surrogate_spearman": _as_float(row.get("spearman") if "spearman" in row else row.get("best_spearman")),
         "surrogate_kendall": _as_float(row.get("kendall") if "kendall" in row else row.get("best_kendall")),
         "surrogate_r2": _as_float(row.get("r2") if "r2" in row else row.get("best_r2")),
@@ -284,11 +298,19 @@ def _build_severson_summary(
 # Batch 9 leaderboard join
 # ---------------------------------------------------------------------------
 
-def _join_shortlist_with_batch9(
-    shortlist: list[dict[str, Any]], batch9_csv: Path,
+def _join_shortlist_with_secondary_test(
+    shortlist: list[dict[str, Any]], secondary_test_csv: Path,
     selection_criteria: str,
 ) -> dict[str, Any]:
-    leaderboard = pd.read_csv(batch9_csv)
+    """Merge per-candidate secondary-test metrics into the shortlist entries.
+
+    The leaderboard CSV is whichever the scorer wrote; it may contain
+    ``secondary_test_*`` columns (preferred, new) and/or the deprecated
+    ``batch9_*`` aliases. Both are passed through unchanged so the
+    ChampionAdjudicator can read either naming.
+    """
+
+    leaderboard = pd.read_csv(secondary_test_csv)
     rows_by_id: dict[str, dict[str, Any]] = {
         str(row["candidate_id"]): {k: (None if pd.isna(v) else v) for k, v in row.to_dict().items()}
         for _, row in leaderboard.iterrows()
@@ -296,8 +318,8 @@ def _join_shortlist_with_batch9(
     enriched: list[dict[str, Any]] = []
     for entry in shortlist:
         merged = dict(entry)
-        batch9 = rows_by_id.get(str(entry["candidate_id"]), {})
-        for key, value in batch9.items():
+        secondary = rows_by_id.get(str(entry["candidate_id"]), {})
+        for key, value in secondary.items():
             if key in {"candidate_id", "source_run_id", "candidate_path",
                        "recipe", "split_mode", "split_seed",
                        "model_family", "feature_set", "target_transform",
@@ -311,6 +333,15 @@ def _join_shortlist_with_batch9(
     }
 
 
+def _join_shortlist_with_batch9(
+    shortlist: list[dict[str, Any]], batch9_csv: Path,
+    selection_criteria: str,
+) -> dict[str, Any]:
+    """Deprecated alias for :func:`_join_shortlist_with_secondary_test`."""
+
+    return _join_shortlist_with_secondary_test(shortlist, batch9_csv, selection_criteria)
+
+
 # ---------------------------------------------------------------------------
 # Score-on-Batch9 subprocess wrapper
 # ---------------------------------------------------------------------------
@@ -318,23 +349,32 @@ def _join_shortlist_with_batch9(
 def _invoke_scorer(
     candidates: list[dict[str, Any]], scorer_script: Path,
     bfc_root: Path, out_dir: Path, max_cycle: int,
+    *,
+    secondary_test_source: str = "severson_b3",
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     candidates_json = out_dir / "shortlist_candidates.json"
     candidates_json.write_text(json.dumps(candidates, indent=2))
+    scoring_dir = out_dir / "secondary_test_scoring"
     cmd = [
         sys.executable, str(scorer_script),
         "--candidate-list", str(candidates_json),
         "--battery-fast-charging-root", str(bfc_root),
-        "--out", str(out_dir / "batch9_scoring"),
+        "--out", str(scoring_dir),
         "--max-cycle", str(max_cycle),
     ]
-    print("Running Batch 9 scorer:", " ".join(cmd))
+    print(f"Running secondary-test scorer ({secondary_test_source}):", " ".join(cmd))
     subprocess.run(cmd, check=True, cwd=str(REPO_ROOT))
-    leaderboard = out_dir / "batch9_scoring" / "batch9_leaderboard.csv"
-    if not leaderboard.exists():
-        raise FileNotFoundError(f"Scorer did not produce {leaderboard}")
-    return leaderboard
+    # Both scorers emit a `batch9_leaderboard.csv` (legacy filename), and the
+    # new severson_b3 scorer also writes `secondary_test_leaderboard.csv`.
+    # Prefer the new name, fall back to the alias for backwards compatibility.
+    for name in ("secondary_test_leaderboard.csv", "batch9_leaderboard.csv"):
+        candidate = scoring_dir / name
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError(
+        f"Scorer did not produce a leaderboard CSV in {scoring_dir}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -368,13 +408,18 @@ def _write_markdown_report(out_dir: Path, shortlist: ChampionShortlist,
             f"{entry.get('split_seed')} | {entry.get('model_family')} | {entry.get('feature_set')} | "
             f"{entry.get('target_transform')} | {entry.get('surrogate_rmse'):.3f} |"
         )
+    # Prefer source-agnostic keys for the decision rendering; fall back to the
+    # legacy batch9_* aliases so reports written by the old scorer still render.
+    def _secondary(entry: dict[str, Any], key: str) -> Any:
+        return entry.get(f"secondary_test_{key}", entry.get(f"batch9_{key}"))
+
     lines.extend([
         "",
-        "## Batch 9 Scoring",
+        "## Secondary-Test Scoring",
         "",
         f"leaderboard: `{batch9_csv}`",
         "",
-        "## ChampionAdjudicator (Severson + Batch 9)",
+        "## ChampionAdjudicator (Severson + secondary test)",
         "",
         f"selection criteria: {decision.selection_criteria}",
         "",
@@ -390,10 +435,11 @@ def _write_markdown_report(out_dir: Path, shortlist: ChampionShortlist,
         f"feature_set=`{decision.final_champion.get('feature_set')}`, "
         f"target=`{decision.final_champion.get('target_transform')}`",
         f"- surrogate_rmse: `{decision.final_champion.get('surrogate_rmse')}`",
-        f"- batch9_rmse: `{decision.final_champion.get('batch9_rmse')}`",
-        f"- batch9_mae: `{decision.final_champion.get('batch9_mae')}`",
-        f"- batch9_spearman: `{decision.final_champion.get('batch9_spearman')}`",
-        f"- batch9_pgr: `{decision.final_champion.get('batch9_pgr')}`",
+        f"- secondary_test_source: `{decision.final_champion.get('secondary_test_source')}`",
+        f"- secondary_test_rmse: `{_secondary(decision.final_champion, 'rmse')}`",
+        f"- secondary_test_mae: `{_secondary(decision.final_champion, 'mae')}`",
+        f"- secondary_test_spearman: `{_secondary(decision.final_champion, 'spearman')}`",
+        f"- secondary_test_pgr: `{_secondary(decision.final_champion, 'pgr')}`",
         f"- candidate_path: `{decision.final_champion.get('candidate_path')}`",
     ])
     if decision.runner_up:
@@ -402,7 +448,7 @@ def _write_markdown_report(out_dir: Path, shortlist: ChampionShortlist,
             "### Runner-up",
             "",
             f"- candidate_id: `{decision.runner_up.get('candidate_id')}`",
-            f"- batch9_rmse: `{decision.runner_up.get('batch9_rmse')}`",
+            f"- secondary_test_rmse: `{_secondary(decision.runner_up, 'rmse')}`",
             f"- recipe / split / seed: `{decision.runner_up.get('recipe')}` / "
             f"`{decision.runner_up.get('split_mode')}` / `{decision.runner_up.get('split_seed')}`",
         ])
@@ -465,9 +511,24 @@ def main() -> int:
                         help="Use deterministic offline fallback for both roles (no LLM calls).")
     parser.add_argument("--model", default=None,
                         help="Override LLM model. Default uses OPEN_BATTERY_AGENTS_MODEL.")
-    parser.add_argument("--scorer-script", type=Path,
-                        default=REPO_ROOT / "scripts" / "score_candidates_on_batch9.py")
+    parser.add_argument("--scorer-script", type=Path, default=None,
+                        help="Override the secondary-test scorer script. Default resolves to "
+                        "score_candidates_on_severson_b3.py when "
+                        "--secondary-test-source=severson_b3, else "
+                        "score_candidates_on_batch9.py.")
+    parser.add_argument("--secondary-test-source", choices=["severson_b3", "attia_batch9"],
+                        default="severson_b3",
+                        help="Locked secondary-test source. Default 'severson_b3' uses the "
+                        "Severson 2018-04-12 batch (in-distribution); 'attia_batch9' restores "
+                        "the legacy Attia transfer experiment.")
     args = parser.parse_args()
+
+    # Patch E4: resolve the dynamic scorer script default based on the source.
+    if args.scorer_script is None:
+        if args.secondary_test_source == "severson_b3":
+            args.scorer_script = REPO_ROOT / "scripts" / "score_candidates_on_severson_b3.py"
+        else:
+            args.scorer_script = REPO_ROOT / "scripts" / "score_candidates_on_batch9.py"
 
     full_runs_csv = args.summary_root / "trackA_full_run_summary.csv"
     full_cands_csv = args.summary_root / "trackA_full_all_candidates.csv"
@@ -515,6 +576,8 @@ def main() -> int:
             "bfc_root": str(args.bfc_root),
             "aggregator_criteria": args.aggregator_criteria,
             "adjudicator_criteria": args.adjudicator_criteria,
+            "secondary_test_source": args.secondary_test_source,
+            "scorer_script": str(args.scorer_script),
         },
     )
     store.write_artifact(manifest)
@@ -530,28 +593,33 @@ def main() -> int:
               f"{entry.get('recipe'):14s} {entry.get('split_mode'):6s} seed={entry.get('split_seed')} "
               f"{entry.get('model_family')} surrogate_rmse={entry.get('surrogate_rmse'):.3f}")
 
-    # Score the shortlist on Batch 9
-    batch9_csv = _invoke_scorer(
+    # Score the shortlist on the locked secondary test (Severson b3 by default).
+    secondary_test_csv = _invoke_scorer(
         shortlist.shortlist, args.scorer_script, args.bfc_root, args.out, args.max_cycle,
+        secondary_test_source=args.secondary_test_source,
     )
-    print(f"Batch 9 leaderboard: {batch9_csv}")
+    print(f"secondary-test leaderboard ({args.secondary_test_source}): {secondary_test_csv}")
 
-    shortlist_with_batch9 = _join_shortlist_with_batch9(
-        shortlist.shortlist, batch9_csv, args.adjudicator_criteria,
+    shortlist_with_secondary = _join_shortlist_with_secondary_test(
+        shortlist.shortlist, secondary_test_csv, args.adjudicator_criteria,
     )
+    (args.out / "shortlist_with_secondary_test.json").write_text(
+        json.dumps(shortlist_with_secondary, indent=2, default=str)
+    )
+    # Legacy alias for backwards compatibility.
     (args.out / "shortlist_with_batch9.json").write_text(
-        json.dumps(shortlist_with_batch9, indent=2, default=str)
+        json.dumps(shortlist_with_secondary, indent=2, default=str)
     )
 
     print("Invoking ChampionAdjudicator...")
     decision = ChampionAdjudicator().run(
-        ctx, shortlist_with_batch9, args.adjudicator_criteria,
+        ctx, shortlist_with_secondary, args.adjudicator_criteria,
         parent_artifact_ids=[shortlist.artifact_id],
     )
 
     decision_path = args.out / "champion_decision.json"
     decision_path.write_text(decision.model_dump_json(indent=2))
-    md_path = _write_markdown_report(args.out, shortlist, decision, batch9_csv)
+    md_path = _write_markdown_report(args.out, shortlist, decision, secondary_test_csv)
     print(f"champion decision JSON: {decision_path}")
     print(f"champion decision MD  : {md_path}")
     print()
@@ -562,8 +630,13 @@ def main() -> int:
     print(f"  config       : {fc.get('recipe')} / {fc.get('split_mode')} / seed={fc.get('split_seed')}")
     print(f"  model        : {fc.get('model_family')} feature_set={fc.get('feature_set')} target={fc.get('target_transform')}")
     print(f"  surrogate    : RMSE={fc.get('surrogate_rmse')} Spearman={fc.get('surrogate_spearman')}")
-    print(f"  Batch 9      : RMSE={fc.get('batch9_rmse')} MAE={fc.get('batch9_mae')} "
-          f"Spearman={fc.get('batch9_spearman')} PGR={fc.get('batch9_pgr')}")
+    st_rmse = fc.get("secondary_test_rmse", fc.get("batch9_rmse"))
+    st_mae = fc.get("secondary_test_mae", fc.get("batch9_mae"))
+    st_spearman = fc.get("secondary_test_spearman", fc.get("batch9_spearman"))
+    st_pgr = fc.get("secondary_test_pgr", fc.get("batch9_pgr"))
+    st_source = fc.get("secondary_test_source", args.secondary_test_source)
+    print(f"  Secondary    : source={st_source} RMSE={st_rmse} MAE={st_mae} "
+          f"Spearman={st_spearman} PGR={st_pgr}")
     return 0
 
 

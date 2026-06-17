@@ -13,11 +13,14 @@
 #
 # Environment variables (all optional):
 #   REPO_ROOT, BFC_ROOT, RUN_ROOT, VENV_DIR, PYTHON_MODULE
-#   K                  Top-K shortlist size (default 3).
-#   OFFLINE            true to use deterministic offline fallback for both roles.
-#   SUMMARY_ROOT       Default $SCRATCH/battery-arr/reports/trackA_summary.
-#   RUNS_ROOT          Default $SCRATCH/battery-arr/runs.
-#   REPORTS_ROOT       Default $SCRATCH/battery-arr/reports.
+#   K                       Top-K shortlist size (default 3).
+#   OFFLINE                 true to use deterministic offline fallback for both roles.
+#   SUMMARY_ROOT            Default $SCRATCH/battery-arr/reports/trackA_summary.
+#   RUNS_ROOT               Default $SCRATCH/battery-arr/runs.
+#   REPORTS_ROOT            Default $SCRATCH/battery-arr/reports.
+#   SECONDARY_TEST_SOURCE   Patch-E4: severson_b3 (default) | attia_batch9.
+#                           Controls which scorer the champion pipeline invokes.
+#   SCORER_SCRIPT           Optional explicit override for the scorer script.
 
 set -euo pipefail
 
@@ -72,6 +75,8 @@ RUNS_ROOT="${RUNS_ROOT:-${RUN_ROOT}/runs}"
 REPORTS_ROOT="${REPORTS_ROOT:-${RUN_ROOT}/reports}"
 BFC_ROOT="${BFC_ROOT:-${REPO_ROOT}/literature_models_and_data/battery-fast-charging}"
 K="${K:-3}"
+SECONDARY_TEST_SOURCE="${SECONDARY_TEST_SOURCE:-severson_b3}"
+SCORER_SCRIPT="${SCORER_SCRIPT:-}"
 
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 OUT_DIR="${RUN_ROOT}/champion_selection/${TS}_${SLURM_JOB_ID}"
@@ -83,6 +88,7 @@ echo "Summary root: ${SUMMARY_ROOT}"
 echo "Runs root   : ${RUNS_ROOT}"
 echo "BFC root    : ${BFC_ROOT}"
 echo "K           : ${K}"
+echo "Sec test src: ${SECONDARY_TEST_SOURCE}"
 echo
 
 RUN_ARGS=(
@@ -93,7 +99,11 @@ RUN_ARGS=(
   --runs-root "${RUNS_ROOT}"
   --reports-root "${REPORTS_ROOT}"
   --bfc-root "${BFC_ROOT}"
+  --secondary-test-source "${SECONDARY_TEST_SOURCE}"
 )
+if [ -n "${SCORER_SCRIPT}" ]; then
+  RUN_ARGS+=(--scorer-script "${SCORER_SCRIPT}")
+fi
 if [ "${OFFLINE}" = "true" ]; then
   RUN_ARGS+=(--offline)
 else

@@ -6,7 +6,9 @@
 #SBATCH --mem=64G
 #SBATCH --time=8:00:00
 #SBATCH --job-name=oba-trackA
-#SBATCH --output=runs/slurm/oba-trackA-%j.out
+#SBATCH --output=/scratch/users/svangara/battery-arr/runs/slurm/oba-trackA-%j.out
+#SBATCH --open-mode=append
+#SBATCH --no-requeue
 
 # Open Battery Agents / Track A sealed broad-discovery campaign — Sherlock.
 #
@@ -29,16 +31,56 @@
 #   INCLUDE_PROTOCOL_FEATURES  true|false.
 #   ALLOW_FREEFORM_CODE        true|false.
 #   PATCH_GENERIC_PROMPTS      true to re-run scripts/patch_trackA_generic_prompts.py.
-#   DO_FINAL_BATCH9            true|false; must be false for Track A discovery.
-#   FINAL_BATCH9_TOP_K         0 default; >0 only with DO_FINAL_BATCH9=true.
+#   SECONDARY_TEST_SOURCE      severson_b3 (default) | attia_batch9. Patch E4
+#                              switched the locked secondary test from Attia
+#                              Batch 9 (transfer-only) to Severson b3
+#                              (in-distribution true-life).
+#   DO_FINAL_SECONDARY_TEST    true|false; default false. Set true to run a
+#                              single locked secondary-test pass on the best
+#                              candidate post-discovery.
+#   FINAL_SECONDARY_TEST_TOP_K 0 default; >0 to also evaluate top-K Severson
+#                              candidates on the secondary test.
+#   DO_FINAL_BATCH9            DEPRECATED alias for DO_FINAL_SECONDARY_TEST.
+#                              When set without SECONDARY_TEST_SOURCE, also
+#                              forces SECONDARY_TEST_SOURCE=attia_batch9.
+#   FINAL_BATCH9_TOP_K         DEPRECATED alias for FINAL_SECONDARY_TEST_TOP_K.
 #   OFFLINE                    true|false; offline disables the LLM stack.
+
+# ---------- EARLY HEARTBEAT (runs before set -euo pipefail and any GPFS touch) ----------
+# Detects slurmstepd hangs / stale-GPFS conditions on the assigned node within
+# ~1 second of job start, before the relative-path Oak `--output` write or the
+# `cd ${REPO_ROOT}` stat call. If this file appears on the node but the slurm
+# `--output` log does not, the monitor can classify the job as PHANTOM and
+# auto-resubmit with --exclude=<bad_node>. See diagnostic Dx5/Dx9 (2026-06-09).
+HEARTBEAT_LOCAL="/tmp/oba-trackA-${SLURM_JOB_ID:-nojob}.heartbeat"
+HEARTBEAT_SCRATCH_DIR="/scratch/users/svangara/battery-arr/heartbeats"
+HEARTBEAT_SCRATCH="${HEARTBEAT_SCRATCH_DIR}/oba-trackA-${SLURM_JOB_ID:-nojob}.heartbeat"
+_write_heartbeat() {
+  printf 'jobid=%s host=%s ts=%s\n' \
+    "${SLURM_JOB_ID:-nojob}" "$(hostname 2>/dev/null || echo unknown)" \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "${HEARTBEAT_LOCAL}" 2>/dev/null || true
+  mkdir -p "${HEARTBEAT_SCRATCH_DIR}" 2>/dev/null || true
+  cp -f "${HEARTBEAT_LOCAL}" "${HEARTBEAT_SCRATCH}" 2>/dev/null || true
+}
+_write_heartbeat
+( while true; do _write_heartbeat || true; sleep 300; done ) &
+HEARTBEAT_PID=$!
+disown "${HEARTBEAT_PID}" 2>/dev/null || true
+
+export PYTHONUNBUFFERED=1
 
 set -euo pipefail
 
 REPO_ROOT="${REPO_ROOT:-/home/groups/darve/svangara/battery-arr-tpc}"
+# Wrap cd with timeout so a stale Oak mount on the node fails loudly instead
+# of wedging silently for 8 hours (cf. Dx2/Dx5 root-cause analysis 2026-06-09).
+if ! timeout 60 bash -c "cd '${REPO_ROOT}' && pwd >/dev/null"; then
+  echo "FATAL: cd ${REPO_ROOT} timed out on $(hostname) -- likely stale GPFS. Aborting." >&2
+  exit 42
+fi
 cd "${REPO_ROOT}"
 
-mkdir -p runs/slurm
+mkdir -p runs/slurm /scratch/users/svangara/battery-arr/runs/slurm
 
 echo "=========================================="
 echo "Open Battery Agents Track A — Sherlock"
@@ -145,6 +187,28 @@ PATCH_GENERIC_PROMPTS="${PATCH_GENERIC_PROMPTS:-false}"
 DO_FINAL_BATCH9="${DO_FINAL_BATCH9:-false}"
 FINAL_BATCH9_TOP_K="${FINAL_BATCH9_TOP_K:-0}"
 
+# Patch E4: new source-agnostic secondary-test contract.
+# SECONDARY_TEST_SOURCE chooses the locked secondary test (severson_b3 default).
+# DO_FINAL_SECONDARY_TEST / FINAL_SECONDARY_TEST_TOP_K are the new gating vars.
+# Legacy DO_FINAL_BATCH9 / FINAL_BATCH9_TOP_K still work and, when set, force
+# SECONDARY_TEST_SOURCE=attia_batch9 unless the new var is also provided.
+SECONDARY_TEST_SOURCE="${SECONDARY_TEST_SOURCE:-severson_b3}"
+DO_FINAL_SECONDARY_TEST="${DO_FINAL_SECONDARY_TEST:-${DO_FINAL_BATCH9}}"
+FINAL_SECONDARY_TEST_TOP_K="${FINAL_SECONDARY_TEST_TOP_K:-${FINAL_BATCH9_TOP_K}}"
+if [ "${DO_FINAL_BATCH9}" = "true" ] && [ "${SECONDARY_TEST_SOURCE}" = "severson_b3" ] && [ -z "${SECONDARY_TEST_SOURCE_EXPLICIT:-}" ]; then
+  # Backwards compat: if the caller set DO_FINAL_BATCH9=true without an explicit
+  # SECONDARY_TEST_SOURCE, preserve the old Attia transfer semantics.
+  echo "NOTE: DO_FINAL_BATCH9=true forces SECONDARY_TEST_SOURCE=attia_batch9 (legacy alias)."
+  SECONDARY_TEST_SOURCE="attia_batch9"
+fi
+case "${SECONDARY_TEST_SOURCE}" in
+  severson_b3|attia_batch9) : ;;
+  *)
+    echo "ERROR: SECONDARY_TEST_SOURCE must be 'severson_b3' or 'attia_batch9', got '${SECONDARY_TEST_SOURCE}'." >&2
+    exit 1
+    ;;
+esac
+
 # ---------------------------------------------------------------------------
 # Output / scratch layout
 # ---------------------------------------------------------------------------
@@ -176,6 +240,9 @@ mkdir -p "${TMPDIR}"
 # ---------------------------------------------------------------------------
 archive_on_exit() {
   status=$?
+  # Stop heartbeat updater and clean its files so monitor sees CLEAN exit.
+  kill "${HEARTBEAT_PID:-0}" 2>/dev/null || true
+  rm -f "${HEARTBEAT_LOCAL:-/dev/null}" "${HEARTBEAT_SCRATCH:-/dev/null}" 2>/dev/null || true
   echo
   echo "=========================================="
   echo "Archiving partial/final outputs, exit status: ${status}"
@@ -219,16 +286,41 @@ cp -a "${SEVERSON_SRC_DIR}/." "${SEVERSON_MAT_DIR}/"
 BATCH9_SRC_DIR="${BFC_ROOT}/data/2019-01-24_batch9"
 BATCH9_PATH="${SCRATCH_BFC}/data/2019-01-24_batch9"
 
-if [ "${DO_FINAL_BATCH9}" = "true" ] || [ "${FINAL_BATCH9_TOP_K}" -gt 0 ]; then
-  if [ ! -d "${BATCH9_SRC_DIR}" ]; then
-    echo "ERROR: Batch 9 requested but expanded folder missing: ${BATCH9_SRC_DIR}" >&2
-    exit 1
+# Resolve the Severson b3 .mat path inside the already-staged severson dir.
+SEVERSON_B3_BATCH_DATE="2018-04-12"
+SEVERSON_B3_MAT_FILE="${SEVERSON_MAT_DIR}/${SEVERSON_B3_BATCH_DATE}_batchdata_updated_struct_errorcorrect.mat"
+SEVERSON_B3_PATH="${SEVERSON_B3_MAT_FILE}"
+
+NEED_SECONDARY=false
+if [ "${DO_FINAL_SECONDARY_TEST}" = "true" ] || [ "${FINAL_SECONDARY_TEST_TOP_K}" -gt 0 ]; then
+  NEED_SECONDARY=true
+fi
+
+if [ "${SECONDARY_TEST_SOURCE}" = "attia_batch9" ]; then
+  if [ "${NEED_SECONDARY}" = "true" ]; then
+    if [ ! -d "${BATCH9_SRC_DIR}" ]; then
+      echo "ERROR: Batch 9 (Attia transfer) requested but expanded folder missing: ${BATCH9_SRC_DIR}" >&2
+      exit 1
+    fi
+    echo "Staging Batch 9 (Attia transfer; final secondary-test validation enabled)..."
+    mkdir -p "${BATCH9_PATH}"
+    cp -a "${BATCH9_SRC_DIR}/." "${BATCH9_PATH}/"
+  else
+    echo "Batch 9 NOT staged (SECONDARY_TEST_SOURCE=attia_batch9 but no final secondary test)."
   fi
-  echo "Staging Batch 9 (final validation enabled)..."
-  mkdir -p "${BATCH9_PATH}"
-  cp -a "${BATCH9_SRC_DIR}/." "${BATCH9_PATH}/"
 else
-  echo "Batch 9 NOT staged (sealed for Track A discovery)."
+  # severson_b3 routing: do NOT stage Attia. The b3 .mat is already in the
+  # staged Severson directory, so we only need to confirm it exists.
+  if [ "${NEED_SECONDARY}" = "true" ]; then
+    if [ ! -f "${SEVERSON_B3_MAT_FILE}" ]; then
+      echo "ERROR: Severson b3 .mat missing at ${SEVERSON_B3_MAT_FILE}" >&2
+      exit 1
+    fi
+    echo "Severson b3 secondary test staged at ${SEVERSON_B3_MAT_FILE}"
+  else
+    echo "Severson b3 secondary test NOT run (DO_FINAL_SECONDARY_TEST=false, FINAL_SECONDARY_TEST_TOP_K=0)."
+  fi
+  echo "Attia Batch 9 NOT staged (default secondary test is severson_b3)."
 fi
 du -sh "${SCRATCH_BFC}" || true
 echo
@@ -340,12 +432,14 @@ print("FEATURE TABLE CHECK PASS")
 PY
 
 # ---------------------------------------------------------------------------
-# Optional Batch 9 feature table (only if final validation enabled)
+# Optional Attia Batch 9 feature table (only if final validation enabled AND
+# the caller has explicitly opted in to the Attia transfer source).
+# Severson b3 reuses the search-time Severson feature programs.
 # ---------------------------------------------------------------------------
-if [ "${DO_FINAL_BATCH9}" = "true" ] || [ "${FINAL_BATCH9_TOP_K}" -gt 0 ]; then
+if [ "${SECONDARY_TEST_SOURCE}" = "attia_batch9" ] && [ "${NEED_SECONDARY}" = "true" ]; then
   echo
   echo "=========================================="
-  echo "Building optional Batch 9 feature table"
+  echo "Building optional Batch 9 feature table (Attia transfer)"
   echo "=========================================="
   "${PYTHON_BIN}" scripts/build_battery_feature_program.py \
     --battery-fast-charging-root "${SCRATCH_BFC}" \
@@ -400,14 +494,21 @@ if [ "${ALLOW_FREEFORM_CODE}" = "true" ]; then
   RUN_ARGS+=(--allow-freeform-code)
 fi
 
-if [ "${DO_FINAL_BATCH9}" = "true" ] || [ "${FINAL_BATCH9_TOP_K}" -gt 0 ]; then
-  RUN_ARGS+=(--batch9-path "${BATCH9_PATH}")
-  RUN_ARGS+=(--batch9-feature-program-path "${BATCH9_FP_DIR}/feature_table.csv")
-  if [ "${DO_FINAL_BATCH9}" = "true" ]; then
-    RUN_ARGS+=(--final-batch9-validation --locked-test)
+RUN_ARGS+=(--secondary-test-source "${SECONDARY_TEST_SOURCE}")
+if [ "${NEED_SECONDARY}" = "true" ]; then
+  if [ "${SECONDARY_TEST_SOURCE}" = "attia_batch9" ]; then
+    RUN_ARGS+=(--secondary-test-path "${BATCH9_PATH}")
+    RUN_ARGS+=(--secondary-test-feature-program-path "${BATCH9_FP_DIR}/feature_table.csv")
+  else
+    RUN_ARGS+=(--secondary-test-path "${SEVERSON_B3_PATH}")
+    # Reuse the Severson search-time feature table for the secondary test.
+    RUN_ARGS+=(--secondary-test-feature-program-path "${SEVERSON_FP_DIR}/feature_table.csv")
   fi
-  if [ "${FINAL_BATCH9_TOP_K}" -gt 0 ]; then
-    RUN_ARGS+=(--final-batch9-top-k "${FINAL_BATCH9_TOP_K}")
+  if [ "${DO_FINAL_SECONDARY_TEST}" = "true" ]; then
+    RUN_ARGS+=(--final-secondary-test-validation --locked-test)
+  fi
+  if [ "${FINAL_SECONDARY_TEST_TOP_K}" -gt 0 ]; then
+    RUN_ARGS+=(--final-secondary-test-top-k "${FINAL_SECONDARY_TEST_TOP_K}")
   fi
 fi
 
@@ -421,7 +522,8 @@ echo "split mode              : ${SPLIT_MODE}"
 echo "split seed              : ${SPLIT_SEED}"
 echo "iterations              : ${ITERATIONS}"
 echo "candidates / iteration  : ${CANDIDATES_PER_ITERATION}"
-echo "Batch 9 final validation: ${DO_FINAL_BATCH9}; top-k=${FINAL_BATCH9_TOP_K}"
+echo "secondary test source   : ${SECONDARY_TEST_SOURCE}"
+echo "secondary final / top-K : ${DO_FINAL_SECONDARY_TEST}; top-k=${FINAL_SECONDARY_TEST_TOP_K}"
 echo
 printf '%q ' "${RUN_ARGS[@]}"
 echo
