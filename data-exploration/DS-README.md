@@ -21,11 +21,12 @@ Raw data: https://data.matr.io/1/
 Great news! The setup and dependency installation commands are automated in shell scripts.
 
 ### Quick Start
-Simply run two commands:
+Simply run three commands:
 
 #### [1] Initial Setup (first time only)
 ```bash
 bash setup.sh
+source battery-env/bin/activate
 ```
 This creates the virtual environment and installs all dependencies.
 

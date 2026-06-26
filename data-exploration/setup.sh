@@ -4,4 +4,7 @@ source battery-env/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 
-echo "Environment setup complete. To deactivate the virtual environment, run 'deactivate'."
+echo ""
+echo "Environment setup complete."
+echo "Run 'source battery-env/bin/activate' to activate the virtual environment before starting Jupyter Notebook."
+echo "To deactivate the virtual environment, run 'deactivate'."
