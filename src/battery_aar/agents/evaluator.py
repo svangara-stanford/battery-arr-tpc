@@ -38,9 +38,10 @@ def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, floa
     y_pred = np.asarray(y_pred, dtype=float)
     rmse = math.sqrt(mean_squared_error(y_true, y_pred))
     mae = mean_absolute_error(y_true, y_pred)
+    has_variation = y_true.size > 1 and np.std(y_true) > 0
     r2 = r2_score(y_true, y_pred) if y_true.size > 1 else float("nan")
-    spearman = spearmanr(y_true, y_pred).statistic if y_true.size > 1 else float("nan")
-    kendall = kendalltau(y_true, y_pred).statistic if y_true.size > 1 else float("nan")
+    spearman = spearmanr(y_true, y_pred).statistic if has_variation else float("nan")
+    kendall = kendalltau(y_true, y_pred).statistic if has_variation else float("nan")
     # MAPE: mask non-positive / non-finite y_true to avoid division blowups.
     mape_mask = np.isfinite(y_true) & np.isfinite(y_pred) & (y_true > 0)
     if mape_mask.any():
