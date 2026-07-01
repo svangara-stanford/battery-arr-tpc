@@ -5,11 +5,9 @@ literature_models_and_data/battery-fast-charging/data/**
 !literature_models_and_data/
 !literature_models_and_data/battery-fast-charging/
 !literature_models_and_data/battery-fast-charging/data/
-!literature_models_and_data/battery-fast-charging/data/severson_2019_true_life_matr/
-
 # Keep placeholder files
 # (ignore all dataset files but keep the directory layout via .gitkeep)
-!literature_models_and_data/battery-fast-charging/data/**/.gitkeep
+!literature_models_and_data/battery-fast-charging/data/.gitkeep
 
 # --- Secrets / local config ---
 .env
