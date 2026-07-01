@@ -508,7 +508,7 @@ def read_reference_status(reference_run: str | Path | None) -> dict[str, Any]:
         if not report_path.exists():
             return {"author_model_predictions_available": False, "strong_rmse": None, "batch9_skipped": True}
     report = json.loads(report_path.read_text())
-    nested = report.get("validation_metrics", {})
+    nested = report.get("validation_metrics") or {}
     strong_rmse = nested.get("rmse")
     if strong_rmse is None and isinstance(nested, dict):
         strong_rmse = (nested.get("early_prediction_vs_observed") or {}).get("rmse")
