@@ -111,6 +111,8 @@ class ModelPlan(ArtifactBase):
     model_family: str
     estimator_name: Optional[str] = None
     target_transform: str = "log10"
+    use_calibrator: bool = False
+    calibration_space: str = "raw"
     feature_set: str = "all_available"
     hyperparameters: Dict[str, Any] = Field(default_factory=dict)
     preprocessing_steps: List[str] = Field(default_factory=list)
@@ -135,6 +137,8 @@ class CandidateSpec(ArtifactBase):
     include_protocol_features: bool = False
     model_family: Optional[str] = None
     target_transform: str = "log10"
+    use_calibrator: bool = False
+    calibration_space: str = "raw"
     feature_set: str = "all_available"
     feature_program_paths: List[str] = Field(default_factory=list)
     feature_program_mode: str = "none"
