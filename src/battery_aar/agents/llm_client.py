@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -138,15 +139,17 @@ def llm_startup_summary(model: str | None = None) -> dict[str, Any]:
     return load_llm_client_config(model=model).safe_summary()
 
 
+_CODE_FENCE_RE = re.compile(r"```[A-Za-z0-9_+-]*[ \t]*\n(.*?)(?:\n```|\Z)", re.DOTALL)
+
+
 def _strip_code_fences(text: str) -> str:
     stripped = text.strip()
-    if stripped.startswith("```"):
-        lines = stripped.splitlines()
-        if lines and lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].startswith("```"):
-            lines = lines[:-1]
-        return "\n".join(lines)
+    # Models often preface code with prose ("Here is the repaired code:").
+    # Extract the first fenced block wherever it appears; fall back to the
+    # raw text when the reply contains no fence at all.
+    match = _CODE_FENCE_RE.search(stripped)
+    if match:
+        return match.group(1).strip()
     return stripped
 
 
