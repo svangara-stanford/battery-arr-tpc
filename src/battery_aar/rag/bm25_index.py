@@ -19,7 +19,10 @@ import json
 from pathlib import Path
 
 import bm25s
+import numpy as np
 import Stemmer
+
+from battery_aar.rag.filters import allowed_mask, validate_spec
 
 RAG_DIR = Path(__file__).resolve().parent
 DEFAULT_CHUNKS_FILE = RAG_DIR / "processed" / "chunks.jsonl"
@@ -58,14 +61,41 @@ def build(
     print(f"indexed {len(chunks)} chunks -> {index_dir} (params: {params})")
 
 
-def search(query: str, index_dir: Path, k: int) -> list[dict]:
-    """Return the top-k chunk records for ``query``, each with a 'score' key."""
+def search(
+    query: str,
+    index_dir: Path = DEFAULT_INDEX_DIR,
+    k: int = 5,
+    filter_spec: dict | None = None,
+) -> list[dict]:
+    """Return the top-k chunk records for ``query``, each with a 'score' key.
+
+    ``filter_spec`` (see ``filters.py``) is applied pre-ranking by masking
+    the BM25 scores of ineligible chunks, so results are exact regardless of
+    filter selectivity. Zero-score hits are dropped.
+    """
     params = json.loads((index_dir / PARAMS_FILE).read_text())
     retriever = bm25s.BM25.load(str(index_dir), load_corpus=True)
+    corpus = retriever.corpus
+
+    weight_mask = None
+    if filter_spec:
+        validate_spec(filter_spec)
+        mask = allowed_mask(corpus, filter_spec)
+        if not mask.any():
+            return []
+        weight_mask = mask.astype(np.float32)
+        k = min(k, int(mask.sum()))
+    else:
+        k = min(k, len(corpus))
+
     tokens = bm25s.tokenize(query, stemmer=_stemmer(params["stem"]), show_progress=False)
-    docs, scores = retriever.retrieve(tokens, k=k, show_progress=False)
+    docs, scores = retriever.retrieve(
+        tokens, k=k, weight_mask=weight_mask, show_progress=False
+    )
     return [
-        {**doc, "score": float(score)} for doc, score in zip(docs[0], scores[0])
+        {**doc, "score": float(score)}
+        for doc, score in zip(docs[0], scores[0])
+        if score > 0.0
     ]
 
 
@@ -93,12 +123,16 @@ def main() -> None:
     p_search.add_argument("query")
     p_search.add_argument("--index-dir", type=Path, default=DEFAULT_INDEX_DIR)
     p_search.add_argument("--k", type=int, default=5)
+    p_search.add_argument(
+        "--filter", type=json.loads, default=None,
+        help='metadata filter spec as JSON, e.g. \'{"tags_any": ["charging-protocols"]}\'',
+    )
 
     args = parser.parse_args()
     if args.command == "build":
         build(args.chunks_file, args.index_dir, args.k1, args.b, args.method, args.stem)
     else:
-        for rank, hit in enumerate(search(args.query, args.index_dir, args.k), 1):
+        for rank, hit in enumerate(search(args.query, args.index_dir, args.k, args.filter), 1):
             pages = (
                 f"p{hit['page_start']}"
                 if hit["page_start"] == hit["page_end"]

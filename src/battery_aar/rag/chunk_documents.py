@@ -22,6 +22,7 @@ from pathlib import Path
 RAG_DIR = Path(__file__).resolve().parent
 DEFAULT_PROCESSED_DIR = RAG_DIR / "processed"
 DEFAULT_OUT_FILE = DEFAULT_PROCESSED_DIR / "chunks.jsonl"
+DEFAULT_CATALOG_FILE = RAG_DIR / "documents.json"
 
 DEFAULT_CHUNK_SIZE = 1000
 DEFAULT_OVERLAP = 200
@@ -34,6 +35,10 @@ class ChunkRecord:
     chunk_id: str
     doc_id: str
     source: str
+    title: str
+    doc_type: str
+    year: int | None
+    tags: list[str]
     page_start: int
     page_end: int
     char_start: int
@@ -47,6 +52,30 @@ class PageSpan:
     page: int
     start: int
     end: int
+
+
+def load_catalog(catalog_file: Path) -> dict[str, dict]:
+    """Load and validate the hand-maintained document catalog."""
+    catalog = json.loads(catalog_file.read_text(encoding="utf-8"))
+    vocabulary = set(catalog["_tag_vocabulary"])
+    doc_types = set(catalog["_doc_types"])
+    for doc_id, entry in catalog["documents"].items():
+        missing = {"title", "doc_type", "year", "tags"} - set(entry)
+        if missing:
+            raise ValueError(f"catalog entry {doc_id!r} missing fields: {sorted(missing)}")
+        if entry["doc_type"] not in doc_types:
+            raise ValueError(
+                f"catalog entry {doc_id!r} has doc_type {entry['doc_type']!r}; "
+                f"must be one of {sorted(doc_types)}"
+            )
+        unknown = set(entry["tags"]) - vocabulary
+        if unknown:
+            raise ValueError(
+                f"catalog entry {doc_id!r} uses tags outside _tag_vocabulary: {sorted(unknown)}"
+            )
+        if not entry["tags"]:
+            raise ValueError(f"catalog entry {doc_id!r} must have at least one tag")
+    return catalog["documents"]
 
 
 def concatenate_pages(page_records: list[dict]) -> tuple[str, list[PageSpan]]:
@@ -78,6 +107,7 @@ def chunk_document(
     page_records: list[dict],
     chunk_size: int,
     overlap: int,
+    catalog_entry: dict,
 ) -> list[ChunkRecord]:
     if not 0 <= overlap < chunk_size:
         raise ValueError("overlap must satisfy 0 <= overlap < chunk_size")
@@ -99,6 +129,10 @@ def chunk_document(
                 chunk_id=f"{doc_id}:{index:04d}",
                 doc_id=doc_id,
                 source=source,
+                title=catalog_entry["title"],
+                doc_type=catalog_entry["doc_type"],
+                year=catalog_entry["year"],
+                tags=catalog_entry["tags"],
                 page_start=page_start,
                 page_end=page_end,
                 char_start=start,
@@ -119,19 +153,33 @@ def load_page_records(jsonl_path: Path) -> list[dict]:
         return [json.loads(line) for line in handle if line.strip()]
 
 
-def chunk_all(processed_dir: Path, out_file: Path, chunk_size: int, overlap: int) -> None:
+def chunk_all(
+    processed_dir: Path,
+    out_file: Path,
+    chunk_size: int,
+    overlap: int,
+    catalog_file: Path = DEFAULT_CATALOG_FILE,
+) -> None:
     page_files = sorted(
         p for p in processed_dir.glob("*.jsonl") if p.resolve() != out_file.resolve()
     )
     if not page_files:
         raise FileNotFoundError(f"no page-level JSONL files found in {processed_dir}")
 
+    catalog = load_catalog(catalog_file)
+    uncatalogued = sorted(p.stem for p in page_files if p.stem not in catalog)
+    if uncatalogued:
+        raise ValueError(
+            f"documents missing from {catalog_file.name}: {uncatalogued}; "
+            "add a catalog entry for every PDF before chunking"
+        )
+
     out_file.parent.mkdir(parents=True, exist_ok=True)
     total = 0
     with out_file.open("w", encoding="utf-8") as handle:
         for page_file in page_files:
             page_records = load_page_records(page_file)
-            chunks = chunk_document(page_records, chunk_size, overlap)
+            chunks = chunk_document(page_records, chunk_size, overlap, catalog[page_file.stem])
             for chunk in chunks:
                 handle.write(json.dumps(asdict(chunk), ensure_ascii=False) + "\n")
             total += len(chunks)
@@ -145,8 +193,9 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT_FILE)
     parser.add_argument("--chunk-size", type=int, default=DEFAULT_CHUNK_SIZE)
     parser.add_argument("--overlap", type=int, default=DEFAULT_OVERLAP)
+    parser.add_argument("--catalog-file", type=Path, default=DEFAULT_CATALOG_FILE)
     args = parser.parse_args()
-    chunk_all(args.processed_dir, args.out, args.chunk_size, args.overlap)
+    chunk_all(args.processed_dir, args.out, args.chunk_size, args.overlap, args.catalog_file)
 
 
 if __name__ == "__main__":

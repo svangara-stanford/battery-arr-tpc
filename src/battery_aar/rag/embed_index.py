@@ -30,9 +30,10 @@ import numpy as np
 
 from battery_aar.agents.llm_client import load_llm_client_config
 from battery_aar.rag.bm25_index import load_chunks
+from battery_aar.rag.filters import allowed_mask, validate_spec
 
 EMBEDDING_MODEL = "text-embedding-ada-002"  # fixed; not the .env agent model
-EMBEDDING_DIM = 1536
+EMBEDDING_DIM = 1536 # default embedding size for ada-002
 
 RAG_DIR = Path(__file__).resolve().parent
 DEFAULT_CHUNKS_FILE = RAG_DIR / "processed" / "chunks.jsonl"
@@ -46,6 +47,11 @@ DEFAULT_M = 16
 DEFAULT_EF_CONSTRUCTION = 200
 DEFAULT_EF_SEARCH = 50
 EMBED_BATCH_SIZE = 64
+
+# Below this fraction of allowed chunks, filtered search switches from the
+# HNSW filter callback (graph traversal degrades under selective filters) to
+# exact brute-force cosine over the cached embeddings of the allowed subset.
+BRUTE_FORCE_FRACTION = 0.1
 
 
 def _embedding_client():
@@ -123,23 +129,58 @@ def build(
     print(f"indexed {len(chunks)} chunks -> {index_dir} (params: {params})")
 
 
+def _brute_force_search(
+    query_vector: np.ndarray,
+    allowed_labels: np.ndarray,
+    embeddings: np.ndarray,
+    k: int,
+) -> list[tuple[int, float]]:
+    """Exact cosine top-k over an allowed subset; returns (label, similarity)."""
+    subset = embeddings[allowed_labels]
+    subset = subset / np.linalg.norm(subset, axis=1, keepdims=True)
+    query = query_vector[0] / np.linalg.norm(query_vector[0])
+    similarities = subset @ query
+    order = np.argsort(-similarities)[:k]
+    return [(int(allowed_labels[i]), float(similarities[i])) for i in order]
+
+
 def search(
     query: str,
     index_dir: Path = DEFAULT_INDEX_DIR,
     k: int = 5,
     ef: int = DEFAULT_EF_SEARCH,
+    filter_spec: dict | None = None,
 ) -> list[dict]:
     """Return the top-k chunk records for ``query``, each with a 'score' key
-    (cosine similarity, higher is better)."""
+    (cosine similarity, higher is better).
+
+    ``filter_spec`` (see ``filters.py``) is applied pre-ranking: broad
+    filters use the HNSW filter callback; filters keeping fewer than
+    BRUTE_FORCE_FRACTION of chunks fall back to exact cosine search over the
+    cached embeddings of the allowed subset.
+    """
     params = json.loads((index_dir / PARAMS_FILE).read_text())
     chunks = load_chunks(Path(params["chunks_file"]))
+    query_vector = embed_texts([query])
+
+    mask = None
+    if filter_spec:
+        validate_spec(filter_spec)
+        mask = allowed_mask(chunks, filter_spec)
+        if not mask.any():
+            return []
+        k = min(k, int(mask.sum()))
+
+    if mask is not None and mask.sum() < BRUTE_FORCE_FRACTION * len(chunks):
+        embeddings = np.load(index_dir / EMBEDDINGS_FILE)
+        hits = _brute_force_search(query_vector, np.flatnonzero(mask), embeddings, k)
+        return [{**chunks[label], "score": score} for label, score in hits]
 
     index = hnswlib.Index(space="cosine", dim=params["dim"])
     index.load_index(str(index_dir / INDEX_FILE), max_elements=params["n_chunks"])
     index.set_ef(max(ef, k))
-
-    query_vector = embed_texts([query])
-    labels, distances = index.knn_query(query_vector, k=k)
+    filter_function = (lambda label: bool(mask[label])) if mask is not None else None
+    labels, distances = index.knn_query(query_vector, k=k, filter=filter_function)
     return [
         {**chunks[label], "score": float(1.0 - distance)}
         for label, distance in zip(labels[0], distances[0])
@@ -165,12 +206,17 @@ def main() -> None:
     p_search.add_argument("--index-dir", type=Path, default=DEFAULT_INDEX_DIR)
     p_search.add_argument("--k", type=int, default=5)
     p_search.add_argument("--ef", type=int, default=DEFAULT_EF_SEARCH)
+    p_search.add_argument(
+        "--filter", type=json.loads, default=None,
+        help='metadata filter spec as JSON, e.g. \'{"tags_any": ["charging-protocols"]}\'',
+    )
 
     args = parser.parse_args()
     if args.command == "build":
         build(args.chunks_file, args.index_dir, args.m, args.ef_construction, args.re_embed)
     else:
-        for rank, hit in enumerate(search(args.query, args.index_dir, args.k, args.ef), 1):
+        hits = search(args.query, args.index_dir, args.k, args.ef, args.filter)
+        for rank, hit in enumerate(hits, 1):
             pages = (
                 f"p{hit['page_start']}"
                 if hit["page_start"] == hit["page_end"]
