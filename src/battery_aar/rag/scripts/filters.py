@@ -26,7 +26,7 @@ from pathlib import Path
 
 import numpy as np
 
-RAG_DIR = Path(__file__).resolve().parent
+RAG_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_CATALOG_FILE = RAG_DIR / "documents.json"
 
 ALLOWED_KEYS = {"doc_id", "doc_type", "tags_any", "year_min", "year_max"}

@@ -14,9 +14,9 @@ Credentials reuse the agent client env chain (OPEN_BATTERY_AGENTS_* /
 STANFORD_AI_*, optionally from .env).
 
 Usage:
-    python -m battery_aar.rag.embed_index build [--M 16]
+    python -m battery_aar.rag.scripts.embed_index build [--M 16]
         [--ef-construction 200] [--re-embed]
-    python -m battery_aar.rag.embed_index search "your query" [--k 5] [--ef 50]
+    python -m battery_aar.rag.scripts.embed_index search "your query" [--k 5] [--ef 50]
 """
 
 from __future__ import annotations
@@ -29,13 +29,13 @@ import hnswlib
 import numpy as np
 
 from battery_aar.agents.llm_client import load_llm_client_config
-from battery_aar.rag.bm25_index import load_chunks
-from battery_aar.rag.filters import allowed_mask, validate_spec
+from battery_aar.rag.scripts.bm25_index import load_chunks
+from battery_aar.rag.scripts.filters import allowed_mask, validate_spec
 
 EMBEDDING_MODEL = "text-embedding-ada-002"  # fixed; not the .env agent model
 EMBEDDING_DIM = 1536 # default embedding size for ada-002
 
-RAG_DIR = Path(__file__).resolve().parent
+RAG_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_CHUNKS_FILE = RAG_DIR / "processed" / "chunks.jsonl"
 DEFAULT_INDEX_DIR = RAG_DIR / "processed" / "hnsw_index"
 

@@ -9,7 +9,7 @@ Text-only by design: image blocks are skipped and pages that yield almost
 no text (likely scanned) are reported so they are not silently lost.
 
 Usage:
-    python -m battery_aar.rag.process_pdfs [--pdf-dir DIR] [--out-dir DIR]
+    python -m battery_aar.rag.scripts.process_pdfs [--pdf-dir DIR] [--out-dir DIR]
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from pathlib import Path
 
 import fitz  # PyMuPDF
 
-RAG_DIR = Path(__file__).resolve().parent
+RAG_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_PDF_DIR = RAG_DIR / "pdfs"
 DEFAULT_OUT_DIR = RAG_DIR / "processed"
 

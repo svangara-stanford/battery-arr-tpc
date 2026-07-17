@@ -12,11 +12,11 @@ Each re-ranked hit keeps its retrieval diagnostics and gains
 'rerank_score' and 'fusion_rank'; results are ordered by rerank_score.
 
 Usage:
-    python -m battery_aar.rag.rerank "your query" [--k 5] [--candidates 20]
+    python -m battery_aar.rag.scripts.rerank "your query" [--k 5] [--candidates 20]
         [--fusion rrf|beta] [--filter JSON] [--model NAME]
 
 Example:
-    python -m battery_aar.rag.rerank "how is state of charge defined" --k 3 --candidates 20
+    python -m battery_aar.rag.scripts.rerank "how is state of charge defined" --k 3 --candidates 20
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ import argparse
 import json
 from functools import lru_cache
 
-from battery_aar.rag import hybrid_search
+from battery_aar.rag.scripts import hybrid_search
 
 DEFAULT_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 DEFAULT_CANDIDATES = 20

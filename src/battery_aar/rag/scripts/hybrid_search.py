@@ -16,7 +16,7 @@ method, or None where a retriever did not return the chunk) for traces and
 evaluation.
 
 Usage:
-    python -m battery_aar.rag.hybrid_search "your query" [--k 5]
+    python -m battery_aar.rag.scripts.hybrid_search "your query" [--k 5]
         [--fusion rrf|beta] [--beta 0.5] [--candidates 50] [--filter JSON]
 """
 
@@ -25,7 +25,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from battery_aar.rag import bm25_index, embed_index
+from battery_aar.rag.scripts import bm25_index, embed_index
 
 DEFAULT_FUSION = "rrf"
 DEFAULT_BETA = 0.7 # 0.7 is our starting value.

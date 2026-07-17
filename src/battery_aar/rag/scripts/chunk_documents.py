@@ -8,7 +8,7 @@ filtering and citations. The page-level files are left untouched; chunks are
 written to a separate ``chunks.jsonl``.
 
 Usage:
-    python -m battery_aar.rag.chunk_documents [--processed-dir DIR]
+    python -m battery_aar.rag.scripts.chunk_documents [--processed-dir DIR]
         [--out FILE] [--chunk-size N] [--overlap N]
 """
 
@@ -19,7 +19,7 @@ import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-RAG_DIR = Path(__file__).resolve().parent
+RAG_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_PROCESSED_DIR = RAG_DIR / "processed"
 DEFAULT_OUT_FILE = DEFAULT_PROCESSED_DIR / "chunks.jsonl"
 DEFAULT_CATALOG_FILE = RAG_DIR / "documents.json"

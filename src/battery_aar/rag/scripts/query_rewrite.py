@@ -9,12 +9,12 @@ domain-focused queries suitable for the RAG knowledge base. The queries feed
 ``hybrid_search.retrieve`` in the prompt-augmentation stage.
 
 Usage:
-    python -m battery_aar.rag.query_rewrite [--n 4]
+    python -m battery_aar.rag.scripts.query_rewrite [--n 4]
         [--dataset-profile FILE.json] [--feature-probe FILE.json]
         [--show-original]
 
 Example:
-    python -m battery_aar.rag.query_rewrite --n 4 --show-original
+    python -m battery_aar.rag.scripts.query_rewrite --n 4 --show-original
 """
 
 from __future__ import annotations

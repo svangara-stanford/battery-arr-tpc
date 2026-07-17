@@ -7,9 +7,9 @@ evaluation can sweep them; the build-time tokenization settings are
 persisted alongside the index and reused verbatim at query time.
 
 Usage:
-    python -m battery_aar.rag.bm25_index build [--k1 1.5] [--b 0.75]
+    python -m battery_aar.rag.scripts.bm25_index build [--k1 1.5] [--b 0.75]
         [--method lucene] [--no-stem]
-    python -m battery_aar.rag.bm25_index search "your query" [--k 5]
+    python -m battery_aar.rag.scripts.bm25_index search "your query" [--k 5]
 """
 
 from __future__ import annotations
@@ -22,9 +22,9 @@ import bm25s
 import numpy as np
 import Stemmer
 
-from battery_aar.rag.filters import allowed_mask, validate_spec
+from battery_aar.rag.scripts.filters import allowed_mask, validate_spec
 
-RAG_DIR = Path(__file__).resolve().parent
+RAG_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_CHUNKS_FILE = RAG_DIR / "processed" / "chunks.jsonl"
 DEFAULT_INDEX_DIR = RAG_DIR / "processed" / "bm25_index"
 
