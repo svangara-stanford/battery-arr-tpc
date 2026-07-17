@@ -42,6 +42,7 @@ rag = [
   "hnswlib>=0.8",
   "openai>=1.40",
   "python-dotenv>=1",
+  "sentence-transformers>=2.7",
 ]
 
 [tool.setuptools.packages.find]
