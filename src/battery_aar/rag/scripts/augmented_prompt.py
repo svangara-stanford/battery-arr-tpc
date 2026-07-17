@@ -190,6 +190,7 @@ def augment_prompt(
                 }
                 for record in selected
             ],
+            "original_prompt": original_prompt,
             "original_prompt_chars": len(original_prompt),
             "augmented_prompt_chars": len(prompt),
         }
