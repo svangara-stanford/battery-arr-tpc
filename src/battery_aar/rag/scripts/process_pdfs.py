@@ -5,8 +5,9 @@ one JSONL file per document in ``processed/``, with one record per page.
 Page-level records keep source/page provenance so downstream chunking,
 metadata filtering, and citations can point back to the original document.
 
-Text-only by design: image blocks are skipped and pages that yield almost
-no text (likely scanned) are reported so they are not silently lost.
+Image blocks are skipped, but a page that is entirely a scanned image (no text
+layer) is rendered and OCR'd so its content is recovered rather than lost; those
+pages are listed under ``ocr_pages`` in the manifest.
 
 Non-content pages are filtered out before writing: table of contents, index,
 glossary/contributor lists, reference lists (which may be interleaved per
@@ -32,6 +33,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import fitz  # PyMuPDF
+import numpy as np
 
 RAG_DIR = Path(__file__).resolve().parent
 DEFAULT_PDF_DIR = RAG_DIR / "pdfs"
@@ -39,6 +41,13 @@ DEFAULT_OUT_DIR = RAG_DIR / "processed"
 
 # Pages averaging fewer characters than this are flagged as likely scanned.
 LOW_TEXT_CHARS_PER_PAGE = 200
+
+# Some books mix born-digital text with scanned image-only pages that carry no
+# text layer. Such pages are rendered at this DPI and run through OCR so their
+# content is not lost. OCR output shorter than this is treated as a figure-only
+# page (no recoverable prose) and dropped as blank.
+OCR_RENDER_DPI = 200
+OCR_MIN_CHARS = 40
 
 # Paragraphs shorter than this are dropped (figure axis labels, page numbers).
 MIN_PARAGRAPH_CHARS = 4
@@ -137,6 +146,49 @@ def extract_page_paragraphs(page: fitz.Page) -> list[str]:
         for block in sorted(blocks, key=lambda b: (b[1], b[0]))
         if block[6] == _TEXT_BLOCK
     ]
+    return [p for p in paragraphs if len(p) >= MIN_PARAGRAPH_CHARS]
+
+
+_ocr_engine = None
+
+
+def _get_ocr_engine():
+    """Lazily construct the RapidOCR engine (loaded once, only if needed).
+
+    RapidOCR is an optional dependency: books without scanned pages never
+    trigger it, and its absence only matters when OCR is actually required."""
+    global _ocr_engine
+    if _ocr_engine is None:
+        try:
+            from rapidocr_onnxruntime import RapidOCR
+        except ImportError as exc:  # pragma: no cover - depends on environment
+            raise RuntimeError(
+                "scanned pages need OCR; install the RAG extras "
+                "(pip install rapidocr-onnxruntime)"
+            ) from exc
+        _ocr_engine = RapidOCR()
+    return _ocr_engine
+
+
+def is_image_only_page(page: fitz.Page) -> bool:
+    """A page with no text layer but at least one image (likely scanned)."""
+    return not page.get_text().strip() and bool(page.get_images(full=True))
+
+
+def ocr_page_paragraphs(page: fitz.Page) -> list[str]:
+    """Render a scanned page and OCR it into cleaned paragraph blocks.
+
+    Each recognized text line becomes one paragraph, matching the block-per-
+    paragraph shape of :func:`extract_page_paragraphs` so downstream
+    classification and boilerplate detection treat OCR'd pages the same way."""
+    pixmap = page.get_pixmap(dpi=OCR_RENDER_DPI, colorspace=fitz.csGRAY)
+    image = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(
+        pixmap.height, pixmap.width, pixmap.n
+    )
+    result, _ = _get_ocr_engine()(image)
+    if not result:
+        return []
+    paragraphs = [clean_text(line[1]) for line in result]
     return [p for p in paragraphs if len(p) >= MIN_PARAGRAPH_CHARS]
 
 
@@ -286,17 +338,28 @@ def find_body_start(labels: list[str], pages: list[list[str]], texts: list[str])
     return 0
 
 
-def process_pdf(pdf_path: Path) -> tuple[list[PageRecord], dict[str, list[int]], list[int]]:
+def process_pdf(pdf_path: Path) -> tuple[list[PageRecord], dict[str, list[int]], list[int], list[int]]:
     """Extract content pages from a PDF.
 
     Returns the kept content ``PageRecord``s, a map of dropped section label
     -> 1-indexed page numbers (toc, index, references, glossary, frontmatter),
-    and the page numbers whose chapter prose was salvaged from an otherwise
-    dropped reference/index page."""
+    the page numbers whose chapter prose was salvaged from an otherwise dropped
+    reference/index page, and the page numbers recovered via OCR."""
     doc_id = pdf_path.stem
+    ocr_pages: list[int] = []
     with fitz.open(pdf_path) as doc:
         n_pages = doc.page_count
-        pages = [extract_page_paragraphs(page) for page in doc]
+        pages = []
+        for index, page in enumerate(doc):
+            paragraphs = extract_page_paragraphs(page)
+            # Scanned pages have no text layer; recover their content with OCR.
+            if not paragraphs and is_image_only_page(page):
+                paragraphs = ocr_page_paragraphs(page)
+                if sum(len(p) for p in paragraphs) >= OCR_MIN_CHARS:
+                    ocr_pages.append(index + 1)
+                else:
+                    paragraphs = []  # figure-only page: nothing to keep
+            pages.append(paragraphs)
 
     boilerplate = find_boilerplate(pages)
     kept_paragraphs = [[p for p in paragraphs if p not in boilerplate] for paragraphs in pages]
@@ -338,7 +401,7 @@ def process_pdf(pdf_path: Path) -> tuple[list[PageRecord], dict[str, list[int]],
                 text=text,
             )
         )
-    return records, dropped, split_pages
+    return records, dropped, split_pages, ocr_pages
 
 
 def write_jsonl(records: list[PageRecord], out_path: Path) -> None:
@@ -360,7 +423,7 @@ def process_all(pdf_dir: Path, out_dir: Path) -> dict:
     }
 
     for pdf_path in pdf_paths:
-        records, dropped, split_pages = process_pdf(pdf_path)
+        records, dropped, split_pages, ocr_pages = process_pdf(pdf_path)
         out_path = out_dir / f"{pdf_path.stem}.jsonl"
         write_jsonl(records, out_path)
 
@@ -379,6 +442,7 @@ def process_all(pdf_dir: Path, out_dir: Path) -> dict:
             "low_text_pages": low_text_pages,
             "dropped_pages": {label: pages for label, pages in sorted(dropped.items())},
             "split_pages": split_pages,
+            "ocr_pages": ocr_pages,
         }
         manifest["documents"].append(doc_summary)
 
@@ -391,6 +455,8 @@ def process_all(pdf_dir: Path, out_dir: Path) -> dict:
             print(f"  dropped {n_dropped} non-content pages ({summary})")
         if split_pages:
             print(f"  salvaged chapter prose from {len(split_pages)} split pages: {split_pages}")
+        if ocr_pages:
+            print(f"  recovered {len(ocr_pages)} scanned pages via OCR: {ocr_pages}")
         if doc_summary["chars_per_page"] < LOW_TEXT_CHARS_PER_PAGE:
             print(
                 f"  WARNING: {pdf_path.name} averages "

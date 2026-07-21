@@ -43,6 +43,7 @@ rag = [
   "openai>=1.40",
   "python-dotenv>=1",
   "sentence-transformers>=2.7",
+  "rapidocr-onnxruntime>=1.3",  # OCR fallback for scanned image-only pages
 ]
 
 [tool.setuptools.packages.find]
