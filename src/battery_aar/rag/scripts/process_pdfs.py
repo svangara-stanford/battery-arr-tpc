@@ -19,8 +19,9 @@ chapter prose above it is salvaged and kept (those pages are listed under
 ``split_pages`` in the manifest).
 
 Optionally (``--strip-headers``) each kept page's running header (book/chapter
-title + page number) is removed from the emitted text so it does not pollute
-downstream chunks and embeddings; that information is retained as chunk metadata.
+title + page number) and recurring licensing/copyright footers are removed from
+the emitted text so they do not pollute downstream chunks and embeddings; that
+information is retained as chunk metadata.
 
 Usage:
     python -m battery_aar.rag.scripts.process_pdfs [--pdf-dir DIR] [--out-dir DIR]
@@ -63,10 +64,29 @@ MIN_PARAGRAPH_CHARS = 4
 REPEATED_PARAGRAPH_PAGE_FRACTION = 0.3
 MIN_REPEAT_PAGES = 3
 
-# Optional running-header stripping (--strip-headers). A page's first block is a
+# Optional page-furniture stripping (--strip-headers). A page's first block is a
 # running header ("Introduction 3", "16 2 Electrochemical Basics") when it is
 # short and carries a standalone page-number token; longer lines are body prose.
 HEADER_MAX_WORDS = 14
+# Footers (bottom-of-page licensing / copyright / edition lines) recur across
+# pages with only a page number or per-download UUID varying. They are removed
+# when a page's last block(s) both recur (same normalized text on at least
+# MIN_REPEAT_PAGES pages) AND carry one of these cues -- the cue gate keeps
+# unique reference-list entries, which also cite publishers, from being caught.
+FOOTER_SCAN_BLOCKS = 2  # only the last N blocks of a page are footer candidates
+FOOTER_CUES = (
+    "licensed to",
+    "unauthenticated",
+    "all rights reserved",
+    "©",
+    "c⃝",
+    "springer imprint",
+    "wiley-vch",
+    "john wiley",
+    "university of science and technology press",
+    "first edition",
+    "isbn",
+)
 
 # --- Non-content page classification -------------------------------------
 # An index is a dense list of "term, page-number" entries. Some books punctuate
@@ -211,6 +231,47 @@ def find_boilerplate(pages: list[list[str]]) -> set[str]:
             page_counts[paragraph] = page_counts.get(paragraph, 0) + 1
     threshold = max(MIN_REPEAT_PAGES, REPEATED_PARAGRAPH_PAGE_FRACTION * len(pages))
     return {p for p, count in page_counts.items() if count >= threshold}
+
+
+_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
+
+
+def _normalize_footer(block: str) -> str:
+    """Fold the per-page variation out of a footer so copies match: strip the
+    download UUID and digits (page numbers, years) that differ between pages."""
+    text = _UUID.sub("", block.lower())
+    text = re.sub(r"\d+", "#", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def find_footers(pages: list[list[str]]) -> set[str]:
+    """Normalized bottom-of-page footers to strip: licensing / copyright /
+    edition lines that recur across pages.
+
+    A footer must both recur (same normalized last-block text on at least
+    MIN_REPEAT_PAGES pages) and carry a licensing/copyright cue. The recurrence
+    test excludes unique reference-list entries (which also name publishers),
+    and the cue test excludes recurring body text (e.g. a repeated equation)."""
+    counts: dict[str, int] = {}
+    for paragraphs in pages:
+        seen = {_normalize_footer(b) for b in paragraphs[-FOOTER_SCAN_BLOCKS:]}
+        for norm in seen:
+            counts[norm] = counts.get(norm, 0) + 1
+    return {
+        norm
+        for norm, count in counts.items()
+        if count >= MIN_REPEAT_PAGES and any(cue in norm for cue in FOOTER_CUES)
+    }
+
+
+def strip_footers(paragraphs: list[str], footers: set[str]) -> list[str]:
+    """Drop trailing blocks whose normalized form is a known footer."""
+    if not footers:
+        return paragraphs
+    kept = list(paragraphs)
+    while kept and _normalize_footer(kept[-1]) in footers:
+        kept.pop()
+    return kept
 
 
 def norm_header(paragraphs: list[str]) -> str:
@@ -383,10 +444,11 @@ def process_pdf(
     reference/index page, and the page numbers recovered via OCR.
 
     When ``strip_headers`` is set, each kept page's running header (book/chapter
-    title + page number) is removed from the emitted text so it does not pollute
-    downstream chunks and embeddings; that furniture is already captured as
-    structured chunk metadata (title, page span). Stripping happens after
-    classification, which relies on the header being present."""
+    title + page number) and any recurring licensing/copyright footer are removed
+    from the emitted text so they do not pollute downstream chunks and
+    embeddings; that furniture is already captured as structured chunk metadata
+    (title, page span). Stripping happens after classification, which relies on
+    the header being present."""
     doc_id = pdf_path.stem
     ocr_pages: list[int] = []
     with fitz.open(pdf_path) as doc:
@@ -405,6 +467,9 @@ def process_pdf(
 
     boilerplate = find_boilerplate(pages)
     kept_paragraphs = [[p for p in paragraphs if p not in boilerplate] for paragraphs in pages]
+    # Recurring licensing/copyright footers vary per page (UUID, page number), so
+    # find_boilerplate misses them; detect them by normalized recurrence + cue.
+    footers = find_footers(kept_paragraphs) if strip_headers else set()
     texts = ["\n\n".join(paragraphs) for paragraphs in kept_paragraphs]
 
     labels = [classify_page(kept_paragraphs[i], texts[i]) for i in range(n_pages)]
@@ -434,9 +499,11 @@ def process_pdf(
                 dropped.setdefault(label, []).append(page)
                 continue
         elif strip_headers:
-            # Drop the running header from a normal content page. (Salvaged pages
-            # already exclude the header region, so only this branch needs it.)
-            text = "\n\n".join(strip_running_header(kept_paragraphs[index]))
+            # Drop the running header and recurring footer from a normal content
+            # page. (Salvaged pages already exclude the header region and end
+            # above the reference list, so only this branch needs it.)
+            blocks = strip_footers(strip_running_header(kept_paragraphs[index]), footers)
+            text = "\n\n".join(blocks)
         records.append(
             PageRecord(
                 doc_id=doc_id,
@@ -526,8 +593,9 @@ def main() -> None:
     parser.add_argument(
         "--strip-headers",
         action="store_true",
-        help="remove running headers (book/chapter title + page number) from "
-        "page text; the same info is retained as chunk metadata",
+        help="remove running headers (book/chapter title + page number) and "
+        "recurring licensing/copyright footers from page text; the same info is "
+        "retained as chunk metadata",
     )
     args = parser.parse_args()
     process_all(args.pdf_dir, args.out_dir, strip_headers=args.strip_headers)
