@@ -18,8 +18,13 @@ When a reference or index list begins partway down a chapter's last page, the
 chapter prose above it is salvaged and kept (those pages are listed under
 ``split_pages`` in the manifest).
 
+Optionally (``--strip-headers``) each kept page's running header (book/chapter
+title + page number) is removed from the emitted text so it does not pollute
+downstream chunks and embeddings; that information is retained as chunk metadata.
+
 Usage:
     python -m battery_aar.rag.scripts.process_pdfs [--pdf-dir DIR] [--out-dir DIR]
+        [--strip-headers]
 """
 
 from __future__ import annotations
@@ -57,6 +62,11 @@ MIN_PARAGRAPH_CHARS = 4
 # publisher watermark and removed.
 REPEATED_PARAGRAPH_PAGE_FRACTION = 0.3
 MIN_REPEAT_PAGES = 3
+
+# Optional running-header stripping (--strip-headers). A page's first block is a
+# running header ("Introduction 3", "16 2 Electrochemical Basics") when it is
+# short and carries a standalone page-number token; longer lines are body prose.
+HEADER_MAX_WORDS = 14
 
 # --- Non-content page classification -------------------------------------
 # An index is a dense list of "term, page-number" entries. Some books punctuate
@@ -222,6 +232,30 @@ def norm_header(paragraphs: list[str]) -> str:
     return ""
 
 
+_PAGE_NUMBER_TOKEN = re.compile(r"^(\d+|[ivxlcdm]+)\s+|\s+(\d+|[ivxlcdm]+)$", re.I)
+
+
+def strip_running_header(paragraphs: list[str]) -> list[str]:
+    """Drop the leading running-header block (book/chapter title + page number).
+
+    A running header is the page's first block when it is short and carries a
+    standalone page-number token (leading "16 " or trailing " 21"), e.g.
+    "Introduction 3" or "16 2 Electrochemical Basics". Genuine section openers
+    ("Introduction", "Preface") have no page number and are kept, as is body
+    prose (too long to match). Only the first block is considered, so at most one
+    header is removed per page."""
+    if not paragraphs:
+        return paragraphs
+    first = paragraphs[0].strip()
+    if (
+        len(first.split()) <= HEADER_MAX_WORDS
+        and norm_header(paragraphs)  # has real title text beyond the page number
+        and _PAGE_NUMBER_TOKEN.search(first)
+    ):
+        return paragraphs[1:]
+    return paragraphs
+
+
 def is_blank(text: str) -> bool:
     """A page with no extractable text (fully blank or image-only)."""
     return not text.strip()
@@ -338,13 +372,21 @@ def find_body_start(labels: list[str], pages: list[list[str]], texts: list[str])
     return 0
 
 
-def process_pdf(pdf_path: Path) -> tuple[list[PageRecord], dict[str, list[int]], list[int], list[int]]:
+def process_pdf(
+    pdf_path: Path, strip_headers: bool = False
+) -> tuple[list[PageRecord], dict[str, list[int]], list[int], list[int]]:
     """Extract content pages from a PDF.
 
     Returns the kept content ``PageRecord``s, a map of dropped section label
     -> 1-indexed page numbers (toc, index, references, glossary, frontmatter),
     the page numbers whose chapter prose was salvaged from an otherwise dropped
-    reference/index page, and the page numbers recovered via OCR."""
+    reference/index page, and the page numbers recovered via OCR.
+
+    When ``strip_headers`` is set, each kept page's running header (book/chapter
+    title + page number) is removed from the emitted text so it does not pollute
+    downstream chunks and embeddings; that furniture is already captured as
+    structured chunk metadata (title, page span). Stripping happens after
+    classification, which relies on the header being present."""
     doc_id = pdf_path.stem
     ocr_pages: list[int] = []
     with fitz.open(pdf_path) as doc:
@@ -391,6 +433,10 @@ def process_pdf(pdf_path: Path) -> tuple[list[PageRecord], dict[str, list[int]],
             else:
                 dropped.setdefault(label, []).append(page)
                 continue
+        elif strip_headers:
+            # Drop the running header from a normal content page. (Salvaged pages
+            # already exclude the header region, so only this branch needs it.)
+            text = "\n\n".join(strip_running_header(kept_paragraphs[index]))
         records.append(
             PageRecord(
                 doc_id=doc_id,
@@ -410,7 +456,7 @@ def write_jsonl(records: list[PageRecord], out_path: Path) -> None:
             handle.write(json.dumps(asdict(record), ensure_ascii=False) + "\n")
 
 
-def process_all(pdf_dir: Path, out_dir: Path) -> dict:
+def process_all(pdf_dir: Path, out_dir: Path, strip_headers: bool = False) -> dict:
     pdf_paths = sorted(pdf_dir.glob("*.pdf"))
     if not pdf_paths:
         raise FileNotFoundError(f"no PDFs found in {pdf_dir}")
@@ -419,11 +465,12 @@ def process_all(pdf_dir: Path, out_dir: Path) -> dict:
     manifest: dict = {
         "extracted_at": datetime.now(timezone.utc).isoformat(),
         "pdf_dir": str(pdf_dir),
+        "strip_headers": strip_headers,
         "documents": [],
     }
 
     for pdf_path in pdf_paths:
-        records, dropped, split_pages, ocr_pages = process_pdf(pdf_path)
+        records, dropped, split_pages, ocr_pages = process_pdf(pdf_path, strip_headers=strip_headers)
         out_path = out_dir / f"{pdf_path.stem}.jsonl"
         write_jsonl(records, out_path)
 
@@ -476,8 +523,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--pdf-dir", type=Path, default=DEFAULT_PDF_DIR)
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
+    parser.add_argument(
+        "--strip-headers",
+        action="store_true",
+        help="remove running headers (book/chapter title + page number) from "
+        "page text; the same info is retained as chunk metadata",
+    )
     args = parser.parse_args()
-    process_all(args.pdf_dir, args.out_dir)
+    process_all(args.pdf_dir, args.out_dir, strip_headers=args.strip_headers)
 
 
 if __name__ == "__main__":
