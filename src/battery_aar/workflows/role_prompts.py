@@ -43,17 +43,23 @@ def feature_scientist_prompt(dataset_profile: dict[str, Any], feature_probe: dic
 
 Candidate-facing data use row_id and cell_id only as join keys. They must not be model features.
 Allowed feature sources are candidate-facing metadata and first-100-cycle summaries.
-When feature-program tables are available, propose declarative feature-program use rather than raw Pandas code.
-FeatureProgram objects are compiled by trusted repo code and can expose scalar-only, curve-only,
-scalar-plus-curve, and broad-physics feature sets.
 
-Strong plans should reason from general battery degradation principles and choose among:
-- early capacity level and retention
-- capacity-fade slopes, curvature, variance, and early-window statistics
-- resistance, thermal, energy, and efficiency proxies when available
-- charge/discharge curve-shape statistics and cross-cycle curve deltas
+The feature probe below lists the EXISTING baseline feature library. Your job is to propose
+NEW, better features beyond that library — engineered from the raw candidate-facing columns —
+not merely to re-select the probe's features. You may keep useful existing features as a baseline.
+
+Every new feature you propose MUST be implementable by a downstream code generator. Put the
+precise definitions in `feature_program_recipe` as a JSON object mapping each new feature name to:
+- "inputs": the exact candidate-facing columns it is computed from
+- "cycle_window": which cycle_index range it uses (e.g. [2, 100])
+- "formula": an unambiguous formula or short pseudocode (aggregations, slopes, ratios, log-transforms, per-cell)
+Vague family names without formulas will be ignored downstream and waste the iteration.
+
+Strong plans should reason from general battery degradation principles, for example:
+- early capacity level and retention; capacity-fade slopes, curvature, variance, early-window statistics
+- resistance, thermal, energy, and efficiency signals and their cross-cycle trends when available
+- charge/discharge curve-shape statistics and cross-cycle deltas
 - conservative protocol-current features only when explicitly allowed
-- raw or transformed target modeling when statistically and physically justified
 
 Do not assume a particular paper feature set, coefficient vector, target transform, or model family. The goal is to discover transferable early-life predictors from the available early-cycle data and validation feedback.
 
@@ -94,21 +100,17 @@ def code_generator_prompt(feature_plan: dict[str, Any], model_plan: dict[str, An
 def fit(train_metadata, train_cycle_summary, train_labels, config): ...
 def predict(model, test_metadata, test_cycle_summary, config): ...
 
-You may import:
+YOUR PRIMARY JOB: implement the features defined in the FeaturePlan below. For every feature in
+`feature_program_recipe`, write pandas/numpy code inside fit() that computes it per cell from the
+candidate-facing columns, exactly as the plan's formula describes. Apply the identical feature
+computation in predict(). The model must train on the planned features — a candidate that ignores
+the plan and only calls the stock library defeats the purpose of the plan.
+
+You MAY additionally include the stock baseline features:
 from battery_aar.features.battery_lifetime_features import build_all_battery_features
-
-Recommended toolbox call pattern:
-
-X = build_all_battery_features(
-    metadata,
-    cycle_summary,
-    max_cycle=100,
-    include_protocol=True,
-)
-
-Declarative/compiled candidates are preferred. When FeaturePlan/ModelPlan include feature_program_paths,
-feature_set, or feature_program_recipe, do not write raw feature-plumbing code; rely on the trusted compiler
-unless explicitly asked for free-form code.
+X_base = build_all_battery_features(metadata, cycle_summary, max_cycle=100).reset_index()
+Note: it returns row_id/cell_id as the INDEX (never as columns) — call .reset_index() before merging.
+Use it as a supplement to the planned features, not a replacement for them.
 
 Candidate-facing schema:
 - train_metadata/test_metadata include row_id, cell_id, and allowed numeric physical/protocol columns.
@@ -144,16 +146,13 @@ Error message:
 Traceback:
 {traceback_text or ""}
 
-Use the exact toolbox call pattern when using the battery feature helper:
+Keep implementing the FeaturePlan's features (feature_program_recipe) from the candidate-facing
+columns; do not replace them with a plain stock-library call.
 
-X = build_all_battery_features(
-    metadata,
-    cycle_summary,
-    max_cycle=100,
-    include_protocol=True,
-)
-
-Do not invent additional keyword arguments. Use include_protocol, not include_protocol_features.
+If you use the battery feature helper, note that build_all_battery_features(metadata, cycle_summary,
+max_cycle=100) returns row_id/cell_id as the INDEX, never as columns — call .reset_index() before
+merging or selecting row_id. Do not invent additional keyword arguments. Use include_protocol,
+not include_protocol_features.
 
 Feature plan:
 {_json_block(feature_plan)}
