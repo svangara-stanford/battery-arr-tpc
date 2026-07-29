@@ -109,7 +109,11 @@ def retrieve(
     bm25_pos = {h["chunk_id"]: (i + 1, h["score"]) for i, h in enumerate(bm25_hits)}
     semantic_pos = {h["chunk_id"]: (i + 1, h["score"]) for i, h in enumerate(semantic_hits)}
 
-    top = sorted(fused, key=lambda chunk_id: -fused[chunk_id])[:k]
+    # Tie-break by chunk_id: fused's key order comes from a set union in
+    # fuse_beta, which Python's per-process string hash randomization makes
+    # non-deterministic across runs. Without an explicit secondary key, tied
+    # scores would rank differently (and non-reproducibly) run to run.
+    top = sorted(fused, key=lambda chunk_id: (-fused[chunk_id], chunk_id))[:k]
     results = []
     for chunk_id in top:
         record = dict(by_id[chunk_id])
