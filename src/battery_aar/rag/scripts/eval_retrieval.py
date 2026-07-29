@@ -63,8 +63,9 @@ JUDGE_SYSTEM_PROMPT = (
     "query and a numbered list of passages, grade each passage's relevance to "
     "the query: 0 = not relevant / no useful information, 1 = partially or "
     "tangentially relevant, 2 = directly and substantially answers the query. "
-    "Return only a JSON array of integers (0, 1, or 2), one per passage, in "
-    "the same order, nothing else."
+    "Return only a JSON object mapping each passage number (as a string) to its "
+    'integer grade, e.g. {"1": 2, "2": 0, "3": 1}. Include every passage number '
+    "exactly once, nothing else."
 )
 
 CHUNK_PREVIEW_CHARS = 600
@@ -106,28 +107,68 @@ def _pool_candidates(query: str, pool_k: int = DEFAULT_POOL_K) -> list[dict]:
     return list(pooled.values())
 
 
-def _judge_pool(query: str, pooled: list[dict]) -> dict[str, int]:
-    """One LLM call grades the whole pool for a query; returns chunk_id -> grade."""
+def _judge_pool(query: str, pooled: list[dict], max_attempts: int = 2) -> dict[str, int]:
+    """One LLM call grades the whole pool for a query; returns chunk_id -> grade.
+
+    Grades are keyed by passage number (1-based) rather than positionally, so a
+    missing or extra grade only affects that one passage instead of shifting the
+    alignment of every passage after it. Missing passages default to 0. The judge
+    still occasionally miscounts on a large pool, so a mismatch triggers one retry
+    before reconciling, keeping a single flaky reply from crashing the whole run.
+    """
     if not pooled:
         return {}
     listing = "\n\n".join(
         f"[{i}] {chunk['text'][:CHUNK_PREVIEW_CHARS]}" for i, chunk in enumerate(pooled, 1)
     )
     user_prompt = f"Query: {query}\n\nPassages:\n\n{listing}"
-    reply = _chat(JUDGE_SYSTEM_PROMPT, user_prompt, temperature=0.0)
-    grades = _parse_grade_array(reply, expected_len=len(pooled))
-    return {chunk["chunk_id"]: grade for chunk, grade in zip(pooled, grades)}
+    expected = len(pooled)
+    grades: dict[int, int] = {}
+    for attempt in range(1, max_attempts + 1):
+        # First pass deterministic; nudge temperature on retry so a repeat
+        # actually explores a different reply (temp=0 would return the same thing).
+        temperature = 0.0 if attempt == 1 else 0.3
+        reply = _chat(JUDGE_SYSTEM_PROMPT, user_prompt, temperature=temperature)
+        try:
+            grades = _parse_grade_map(reply, expected)
+        except ValueError:
+            grades = {}
+        if len(grades) == expected:
+            break
+        if attempt < max_attempts:
+            print(f"  judge graded {len(grades)}/{expected} passages; retrying")
+    missing = expected - len(grades)
+    if missing:
+        print(f"  judge graded {len(grades)}/{expected} passages; missing -> 0")
+    # Map by passage number so a dropped/extra grade never shifts the rest.
+    return {chunk["chunk_id"]: grades.get(i, 0) for i, chunk in enumerate(pooled, 1)}
 
 
-def _parse_grade_array(text: str, expected_len: int) -> list[int]:
+def _parse_grade_map(text: str, expected: int) -> dict[int, int]:
+    """Parse a JSON object of {passage_number: grade} from an LLM reply.
+
+    Tolerates code fences/prose. Passage numbers outside 1..expected are dropped;
+    grades are clamped to 0..2. Length is validated by the caller.
+    """
     import re
 
-    match = re.search(r"\[.*\]", text, re.DOTALL)
+    match = re.search(r"\{.*\}", text, re.DOTALL)
     candidate = match.group(0) if match else text.strip()
-    parsed = json.loads(candidate)
-    if not isinstance(parsed, list) or len(parsed) != expected_len:
-        raise ValueError(f"expected a JSON array of {expected_len} grades, got: {text}")
-    return [max(0, min(2, int(g))) for g in parsed]
+    try:
+        parsed = json.loads(candidate)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"not a JSON grade object: {text}") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError(f"expected a JSON object of grades, got: {text}")
+    grades: dict[int, int] = {}
+    for key, value in parsed.items():
+        try:
+            passage = int(key)
+        except (TypeError, ValueError):
+            continue
+        if 1 <= passage <= expected:
+            grades[passage] = max(0, min(2, int(value)))
+    return grades
 
 
 def build_judgments(
