@@ -26,6 +26,7 @@ class CandidateRunResult:
     failure_reason: str | None = None
     traceback: str | None = None
     syntax_status: str = "unknown"
+    features_used: dict[str, Any] | None = None
 
 
 def load_candidate(path: str | Path):
@@ -43,22 +44,87 @@ def load_candidate(path: str | Path):
     raise ValueError("candidate must define fit/predict functions or CandidateModel")
 
 
+def _install_feature_capture(phase: dict[str, str], calls: list[dict[str, Any]]) -> None:
+    """Wrap the shared feature builder so the exact columns each candidate
+    trains/predicts on are recorded, regardless of what the generated code does.
+
+    Runs inside the sandbox subprocess before the candidate module is loaded, so
+    the candidate's `from battery_aar.features.battery_lifetime_features import
+    build_all_battery_features` binds the recording wrapper.
+    """
+    from battery_aar.features import battery_lifetime_features as _blf
+
+    original = _blf.build_all_battery_features
+
+    def _recording(*args, **kwargs):
+        out = original(*args, **kwargs)
+        features = out[0] if isinstance(out, tuple) else out
+        try:
+            columns = [str(col) for col in features.columns]
+            n_rows = int(features.shape[0])
+        except Exception:
+            columns, n_rows = [], 0
+        calls.append(
+            {
+                "phase": phase["current"],
+                "n_rows": n_rows,
+                "n_features": len(columns),
+                "feature_columns": columns,
+                "call_kwargs": {
+                    key: (list(value) if isinstance(value, tuple) else value)
+                    for key, value in kwargs.items()
+                    if isinstance(value, (str, int, float, bool, list, tuple, type(None)))
+                },
+            }
+        )
+        return out
+
+    _blf.build_all_battery_features = _recording
+
+
+def _features_used_summary(calls: list[dict[str, Any]]) -> dict[str, Any]:
+    fit_calls = [call for call in calls if call["phase"] == "fit"]
+    last_fit = fit_calls[-1] if fit_calls else None
+    return {
+        "capture_method": "runtime_wrap_build_all_battery_features",
+        "library_builder_called": bool(calls),
+        "fit_feature_columns": list(last_fit["feature_columns"]) if last_fit else [],
+        "n_fit_features": int(last_fit["n_features"]) if last_fit else 0,
+        "calls": calls,
+    }
+
+
 def _worker(queue, path, train_metadata, train_cycle_summary, train_labels, test_metadata, test_cycle_summary, config, forbidden_patterns):
     stdout_buffer = io.StringIO()
     stderr_buffer = io.StringIO()
+    phase = {"current": "import"}
+    feature_calls: list[dict[str, Any]] = []
     try:
         with contextlib.redirect_stdout(stdout_buffer), contextlib.redirect_stderr(stderr_buffer):
             install_open_guard(tuple(forbidden_patterns))
+            _install_feature_capture(phase, feature_calls)
             candidate = load_candidate(path)
+            phase["current"] = "fit"
             if isinstance(candidate, types.ModuleType):
                 model = candidate.fit(train_metadata, train_cycle_summary, train_labels, config)
+                phase["current"] = "predict"
                 pred = candidate.predict(model, test_metadata, test_cycle_summary, config)
             else:
                 model = candidate.fit(train_metadata, train_cycle_summary, train_labels, config)
+                phase["current"] = "predict"
                 pred = candidate.predict(test_metadata, test_cycle_summary, config)
             if not isinstance(pred, pd.DataFrame):
                 pred = pd.DataFrame(pred)
-        queue.put(CandidateRunResult(success=True, predictions=pred, stdout=stdout_buffer.getvalue(), stderr=stderr_buffer.getvalue(), syntax_status="passed"))
+        queue.put(
+            CandidateRunResult(
+                success=True,
+                predictions=pred,
+                stdout=stdout_buffer.getvalue(),
+                stderr=stderr_buffer.getvalue(),
+                syntax_status="passed",
+                features_used=_features_used_summary(feature_calls),
+            )
+        )
     except Exception as exc:
         queue.put(
             CandidateRunResult(
@@ -70,6 +136,7 @@ def _worker(queue, path, train_metadata, train_cycle_summary, train_labels, test
                 stdout=stdout_buffer.getvalue(),
                 stderr=stderr_buffer.getvalue(),
                 syntax_status="passed",
+                features_used=_features_used_summary(feature_calls),
             )
         )
 

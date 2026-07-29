@@ -148,6 +148,7 @@ def _candidate_failure(
         "stderr": result.stderr if result else "",
         "candidate_syntax_status": result.syntax_status if result else "unknown",
         "candidate_path": str(candidate_path),
+        "features_used": result.features_used if result else None,
     }
 
 
@@ -263,6 +264,7 @@ def evaluate_candidate_train_test(
         "stderr": result.stderr,
         "candidate_syntax_status": result.syntax_status,
         "candidate_path": str(candidate_path),
+        "features_used": result.features_used,
     }
     if return_predictions:
         output["predictions"] = merged[["row_id", "y", "y_pred"]].copy()

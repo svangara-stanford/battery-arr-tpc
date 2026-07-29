@@ -661,6 +661,25 @@ def evaluate_candidate(request: CandidateEvaluateRequest) -> CandidateEvaluateRe
                 val_ids=val_ids,
             )
             metrics = {**metrics, **prediction_diagnostics}
+        # Record the features the candidate actually built at runtime (captured
+        # in the sandbox by candidate_api), so executed features are auditable
+        # against the FeaturePlan.
+        features_used = result.get("features_used")
+        features_used_path: Path | None = None
+        if features_used is not None:
+            features_used_path = (
+                store.artifact_dir
+                / f"iteration_{int(request.iteration or 0):03d}"
+                / f"features_used_{candidate_id}.json"
+            )
+            features_used_path.parent.mkdir(parents=True, exist_ok=True)
+            features_used_path.write_text(json.dumps(_json_ready(features_used), indent=2, sort_keys=True) + "\n")
+            metrics = {
+                **metrics,
+                "n_features_used": features_used.get("n_fit_features"),
+                "library_builder_called": features_used.get("library_builder_called"),
+                "features_used_path": str(features_used_path),
+            }
         artifact = EvaluationReport(
             run_id=request.run_id,
             parent_artifact_ids=request.input_artifact_ids,
@@ -690,6 +709,8 @@ def evaluate_candidate(request: CandidateEvaluateRequest) -> CandidateEvaluateRe
         output_paths = {"evaluation_report": str(path)}
         if prediction_path:
             output_paths["predictions"] = str(prediction_path)
+        if features_used_path:
+            output_paths["features_used"] = str(features_used_path)
         return {
             "_success": bool(result.get("success")),
             "_error_type": result.get("error_type"),
