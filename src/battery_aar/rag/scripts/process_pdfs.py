@@ -33,7 +33,7 @@ from pathlib import Path
 
 import fitz  # PyMuPDF
 
-RAG_DIR = Path(__file__).resolve().parents[1]
+RAG_DIR = Path(__file__).resolve().parent
 DEFAULT_PDF_DIR = RAG_DIR / "pdfs"
 DEFAULT_OUT_DIR = RAG_DIR / "processed"
 
