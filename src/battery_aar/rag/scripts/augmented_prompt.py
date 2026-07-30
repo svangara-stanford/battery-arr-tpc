@@ -135,10 +135,13 @@ def augment_prompt(
     beta: float = hybrid_search.DEFAULT_BETA,
     rerank_model: str = rerank.DEFAULT_MODEL,
     trace_dir: Path | None = DEFAULT_TRACE_DIR,
+    prior_feedback: dict | None = None,
 ) -> AugmentedPrompt:
     """Generic augmentation: rewrite -> retrieve per query -> pool -> rerank
     -> budget -> context block + original prompt."""
-    queries = rewrite_queries(original_prompt, n_queries=n_queries)
+    queries = rewrite_queries(
+        original_prompt, n_queries=n_queries, prior_feedback=prior_feedback
+    )
     per_query_hits = [
         hybrid_search.retrieve(
             query, k=candidates_per_query, filter_spec=filter_spec, fusion=fusion, beta=beta
@@ -168,6 +171,7 @@ def augment_prompt(
                 "beta": beta,
                 "rerank_model": rerank_model,
             },
+            "prior_feedback": prior_feedback,
             "queries": queries,
             "per_query_top": [
                 [hit["chunk_id"] for hit in hits] for hits in per_query_hits
@@ -208,12 +212,15 @@ def augment_prompt(
 def augment_feature_scientist_prompt(
     dataset_profile: dict | None = None,
     feature_probe: dict | None = None,
+    prior_feedback: dict | None = None,
     **kwargs,
 ) -> AugmentedPrompt:
     """FeatureScientist-specific entry point: original prompt from
     workflows/role_prompts.py, augmented with retrieved context."""
-    original = feature_scientist_prompt(dataset_profile or {}, feature_probe or {})
-    return augment_prompt(original, **kwargs)
+    original = feature_scientist_prompt(
+        dataset_profile or {}, feature_probe or {}, prior_feedback
+    )
+    return augment_prompt(original, prior_feedback=prior_feedback, **kwargs)
 
 
 def main() -> None:

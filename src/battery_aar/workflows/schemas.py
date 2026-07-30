@@ -132,6 +132,7 @@ class CandidateSpec(ArtifactBase):
     feature_plan_artifact_id: Optional[str] = None
     model_plan_artifact_id: Optional[str] = None
     feature_families: List[str] = Field(default_factory=list)
+    selected_columns: List[str] = Field(default_factory=list)
     include_protocol_features: bool = False
     model_family: Optional[str] = None
     target_transform: str = "log10"

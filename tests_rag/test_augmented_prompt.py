@@ -130,7 +130,7 @@ def _stub_chunk(chunk_id, text):
 
 
 def test_augment_prompt_assembles_context_and_writes_trace(monkeypatch, tmp_path):
-    monkeypatch.setattr(ap, "rewrite_queries", lambda prompt, n_queries: ["q1", "q2"])
+    monkeypatch.setattr(ap, "rewrite_queries", lambda prompt, n_queries, prior_feedback=None: ["q1", "q2"])
 
     per_query = {
         "q1": [_stub_chunk("a", "Alpha content")],
@@ -159,7 +159,7 @@ def test_augment_prompt_assembles_context_and_writes_trace(monkeypatch, tmp_path
 
 
 def test_augment_prompt_falls_back_to_original_when_nothing_retrieved(monkeypatch, tmp_path):
-    monkeypatch.setattr(ap, "rewrite_queries", lambda prompt, n_queries: ["q1"])
+    monkeypatch.setattr(ap, "rewrite_queries", lambda prompt, n_queries, prior_feedback=None: ["q1"])
     monkeypatch.setattr(
         ap.hybrid_search, "retrieve", lambda query, k, filter_spec, fusion, beta: []
     )
@@ -172,7 +172,7 @@ def test_augment_prompt_falls_back_to_original_when_nothing_retrieved(monkeypatc
 
 
 def test_augment_prompt_skips_trace_when_trace_dir_is_none(monkeypatch):
-    monkeypatch.setattr(ap, "rewrite_queries", lambda prompt, n_queries: ["q1"])
+    monkeypatch.setattr(ap, "rewrite_queries", lambda prompt, n_queries, prior_feedback=None: ["q1"])
     monkeypatch.setattr(
         ap.hybrid_search, "retrieve", lambda query, k, filter_spec, fusion, beta: []
     )

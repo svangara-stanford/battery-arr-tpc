@@ -316,7 +316,10 @@ class FeatureScientist:
 
     @staticmethod
     def _augmented_prompt(
-        ctx: RoleContext, dataset_profile: dict[str, Any], probe: dict[str, Any]
+        ctx: RoleContext,
+        dataset_profile: dict[str, Any],
+        probe: dict[str, Any],
+        prior_feedback: dict[str, Any] | None = None,
     ) -> tuple[str, str | None, str | None]:
         """Build the role prompt, RAG-augmented when enabled.
 
@@ -324,7 +327,7 @@ class FeatureScientist:
         indexes, missing optional deps, retrieval errors) falls back to the
         plain prompt so the workflow never breaks on the augmentation path.
         """
-        original = feature_scientist_prompt(dataset_profile, probe)
+        original = feature_scientist_prompt(dataset_profile, probe, prior_feedback)
         if not ctx.rag_augment:
             return original, None, None
         try:
@@ -332,17 +335,25 @@ class FeatureScientist:
                 augment_feature_scientist_prompt,
             )
 
-            augmented = augment_feature_scientist_prompt(dataset_profile, probe)
+            augmented = augment_feature_scientist_prompt(
+                dataset_profile, probe, prior_feedback=prior_feedback
+            )
+            feedback_note = (
+                f"; feedback_from_iter={prior_feedback.get('iteration')}"
+                if prior_feedback
+                else ""
+            )
             summary = (
                 f"RAG context: {len(augmented.chunks)} chunks "
                 f"{[chunk['chunk_id'] for chunk in augmented.chunks]} "
                 f"from queries {augmented.queries}; trace={augmented.trace_path}"
+                f"{feedback_note}"
             )
             return augmented.prompt, summary, None
         except Exception as exc:
             return original, None, f"{type(exc).__name__}: {exc}"
 
-    def run(self, ctx: RoleContext, dataset_profile: dict[str, Any], parent_ids: list[str], iteration: int) -> FeaturePlan:
+    def run(self, ctx: RoleContext, dataset_profile: dict[str, Any], parent_ids: list[str], iteration: int, prior_feedback: dict[str, Any] | None = None) -> FeaturePlan:
         feature_response = ctx.tool_client.build_battery_features(
             run_id=ctx.run_id,
             run_dir=str(ctx.run_dir),
@@ -395,7 +406,7 @@ class FeatureScientist:
                 constraints=["row_id and cell_id are join keys only", "batch 9 is not used during surrogate search"],
             )
         else:
-            prompt, rag_summary, rag_error = self._augmented_prompt(ctx, dataset_profile, probe)
+            prompt, rag_summary, rag_error = self._augmented_prompt(ctx, dataset_profile, probe, prior_feedback)
             if ctx.rag_augment:
                 ctx.trace.log_agent_message(
                     event_type="rag_prompt_augmentation",

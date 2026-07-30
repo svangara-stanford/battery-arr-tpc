@@ -33,24 +33,48 @@ REWRITE_TEMPERATURE = 0.3
 REWRITER_SYSTEM_PROMPT = (
     "You are a query rewriter for a battery-science retrieval system. Given an "
     "agent task prompt, you extract the underlying scientific information needs "
-    "and express them as short search queries. You return only a JSON array of "
-    "strings, nothing else."
+    "and express each as a natural-language question suitable for a "
+    "question-answering retriever. You return only a JSON array of strings, "
+    "nothing else."
 )
 
 
-def rewriter_user_prompt(original_prompt: str, n_queries: int) -> str:
+def _feedback_bias_block(prior_feedback: dict | None) -> str:
+    """Extra rewriter rule biasing some queries toward the science behind the
+    previous iteration's weaknesses. Empty when there is no feedback."""
+    if not prior_feedback:
+        return ""
+    signals = []
+    for key in ("weaknesses", "proposed_next_steps"):
+        for item in prior_feedback.get(key) or []:
+            signals.append(str(item))
+    if not signals:
+        return ""
+    rendered = "; ".join(signals)
+    return (
+        "\n- The previous iteration's predictor underperformed. Bias at least one "
+        "or two queries toward the battery-science concepts behind these validation "
+        f"weaknesses / next steps, so retrieval surfaces evidence to address them: {rendered}"
+    )
+
+
+def rewriter_user_prompt(
+    original_prompt: str, n_queries: int, prior_feedback: dict | None = None
+) -> str:
     return f"""Rewrite the agent task prompt below into {n_queries} retrieval queries for a
 knowledge base of electrochemistry textbooks and battery aging papers.
 
 Rules:
-- Each query is one short phrase (roughly 5-15 words) about battery science
-  concepts the agent needs to ground its decisions in.
+- Phrase each query as a natural-language question (roughly 5-15 words) about
+  battery science concepts the agent needs to ground its decisions in, e.g.
+  "What early-cycle capacity-retention features predict lithium-ion cycle life?".
+  A question-answering retriever ranks these more faithfully than noun phrases.
 - Cover distinct aspects of the task (degradation physics, measurable
   early-cycle signals, feature/predictor constructions, protocol effects);
   do not produce near-duplicates.
 - Use domain vocabulary likely to appear in textbooks and papers.
 - Ignore output-format instructions, JSON schemas, agent bookkeeping, and
-  dataset column names.
+  dataset column names.{_feedback_bias_block(prior_feedback)}
 
 Return a JSON array of exactly {n_queries} strings.
 
@@ -111,13 +135,14 @@ def _extract_string_array(text: str) -> list[str]:
 def rewrite_queries(
     original_prompt: str,
     n_queries: int = DEFAULT_N_QUERIES,
+    prior_feedback: dict | None = None,
 ) -> list[str]:
     """Rewrite an agent task prompt into retrieval queries via the .env LLM."""
     if n_queries < 1:
         raise ValueError("n_queries must be >= 1")
     reply = _chat(
         REWRITER_SYSTEM_PROMPT,
-        rewriter_user_prompt(original_prompt, n_queries),
+        rewriter_user_prompt(original_prompt, n_queries, prior_feedback),
         REWRITE_TEMPERATURE,
     )
     return _extract_string_array(reply)
@@ -127,13 +152,18 @@ def feature_scientist_queries(
     dataset_profile: dict | None = None,
     feature_probe: dict | None = None,
     n_queries: int = DEFAULT_N_QUERIES,
+    prior_feedback: dict | None = None,
 ) -> tuple[str, list[str]]:
     """Build the FeatureScientist prompt and rewrite it into retrieval queries.
 
     Returns (original_prompt, queries).
     """
-    original = feature_scientist_prompt(dataset_profile or {}, feature_probe or {})
-    return original, rewrite_queries(original, n_queries=n_queries)
+    original = feature_scientist_prompt(
+        dataset_profile or {}, feature_probe or {}, prior_feedback
+    )
+    return original, rewrite_queries(
+        original, n_queries=n_queries, prior_feedback=prior_feedback
+    )
 
 
 def main() -> None:

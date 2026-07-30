@@ -38,7 +38,25 @@ def _json_block(payload: dict[str, Any]) -> str:
     return json.dumps(payload, indent=2, sort_keys=True, default=str)
 
 
-def feature_scientist_prompt(dataset_profile: dict[str, Any], feature_probe: dict[str, Any]) -> str:
+def _prior_feedback_block(prior_feedback: dict[str, Any] | None) -> str:
+    """Render prior-iteration validation feedback as a labeled prompt section.
+
+    Empty string when there is no feedback (first iteration), so the prompt is
+    byte-identical to the pre-feedback behavior.
+    """
+    if not prior_feedback:
+        return ""
+    return f"""
+Prior-iteration validation feedback (the previous FeaturePlan was evaluated; revise your choices to address these):
+{_json_block(prior_feedback)}
+"""
+
+
+def feature_scientist_prompt(
+    dataset_profile: dict[str, Any],
+    feature_probe: dict[str, Any],
+    prior_feedback: dict[str, Any] | None = None,
+) -> str:
     return f"""Propose a FeaturePlan JSON object for an early-cycle battery lifetime predictor.
 
 Candidate-facing data use row_id and cell_id only as join keys. They must not be model features.
@@ -62,6 +80,18 @@ Dataset profile:
 
 Feature probe:
 {_json_block(feature_probe)}
+{_prior_feedback_block(prior_feedback)}
+`feature_set` MUST be exactly one of these values (this choice determines which feature
+families are actually used to train the model, so pick deliberately):
+- "scalar_only": scalar summary features (capacity level/retention/slope, resistance,
+  thermal, energy/efficiency summaries).
+- "curve_only": charge/discharge curve-shape and cross-cycle curve-difference features.
+- "scalar_plus_curve": both scalar summaries and curve-shape features.
+- "broad_physics": the widest available physics-aware set (scalar + curve + extended).
+- "all_available": every feature the toolbox produces (no family filtering).
+Set `feature_families` to the specific families you want (e.g. "capacity_summary",
+"curve_difference_approximate"); they are applied only when they match families the
+toolbox actually emits.
 
 Return JSON with keys:
 agent_id, feature_families, selected_columns, include_protocol_features, feature_program_ids,

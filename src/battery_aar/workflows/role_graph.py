@@ -312,6 +312,7 @@ def _candidate_config_dict(candidate: Any) -> dict[str, Any]:
         "include_protocol_features": bool(candidate.include_protocol_features),
         "feature_family_filter": sorted(str(value) for value in list(candidate.feature_family_filter or [])),
         "feature_families": sorted(str(value) for value in list(candidate.feature_families or [])),
+        "selected_columns": sorted(str(value) for value in list(getattr(candidate, "selected_columns", None) or [])),
         "preprocessing": list(candidate.preprocessing or []),
         "hyperparameters": dict(candidate.hyperparameters or {}),
     }
@@ -350,6 +351,33 @@ def _best_successful_record(records: list[dict[str, Any]]) -> dict[str, Any] | N
     if not successful:
         return None
     return min(successful, key=lambda record: float(record["evaluation"].rmse))
+
+
+def _feedback_from_critique(critique: Any, evaluation: Any) -> dict[str, Any] | None:
+    """Compact prior-iteration feedback fed to the next FeatureScientist prompt.
+
+    Combines the critique's qualitative signals with the evaluation's headline
+    metrics so iteration N+1 can react to what iteration N's predictor got wrong.
+    Returns None when there is nothing actionable to pass along.
+    """
+    if critique is None:
+        return None
+    weaknesses = list(getattr(critique, "weaknesses", []) or [])
+    proposed_next_steps = list(getattr(critique, "proposed_next_steps", []) or [])
+    metrics = {}
+    if evaluation is not None:
+        metrics = {
+            key: getattr(evaluation, key, None)
+            for key in ("rmse", "mae", "r2", "spearman", "kendall", "mape", "test_error_pct")
+        }
+    if not weaknesses and not proposed_next_steps and not any(v is not None for v in metrics.values()):
+        return None
+    return {
+        "iteration": getattr(critique, "iteration", None),
+        "metrics": metrics,
+        "weaknesses": weaknesses,
+        "proposed_next_steps": proposed_next_steps,
+    }
 
 
 def _best_metric_rows_by(rows: list[dict[str, Any]], group_key: str) -> list[dict[str, Any]]:
@@ -731,8 +759,9 @@ class RoleGraphRunner:
         candidate_specs = []
         candidate_records: list[dict[str, Any]] = []
         per_iteration_records: list[dict[str, Any]] = []
+        prior_feedback: dict[str, Any] | None = None
         for iteration in range(int(cfg.iterations)):
-            feature_plan = FeatureScientist().run(ctx, profile, parent_ids, iteration)
+            feature_plan = FeatureScientist().run(ctx, profile, parent_ids, iteration, prior_feedback)
             model_plan = ModelArchitect().run(ctx, feature_plan, profile, iteration)
             code_generator = CodeGenerator()
             generated_candidates = code_generator.run_many(ctx, feature_plan, model_plan, iteration)
@@ -782,6 +811,9 @@ class RoleGraphRunner:
                 best_iteration_record = _best_successful_record(iteration_records) or iteration_records[-1]
                 critique = ScientistCritic().run(ctx, best_iteration_record["review"], best_iteration_record["evaluation"], iteration)
                 per_iteration_records.extend(iteration_records)
+                # Close the loop: feed this iteration's critique + headline
+                # metrics into the next iteration's FeatureScientist prompt.
+                prior_feedback = _feedback_from_critique(critique, best_iteration_record["evaluation"])
             else:
                 critique = None
             final_critique = critique

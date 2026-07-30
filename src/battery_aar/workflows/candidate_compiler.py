@@ -24,6 +24,41 @@ SUPPORTED_FEATURE_SETS = {
     "all_available",
 }
 
+# Canonical toolbox feature-family taxonomy. These MUST mirror the
+# SCALAR_FAMILIES / CURVE_FAMILIES / BROAD_PHYSICS_EXTRA_FAMILIES /
+# PROTOCOL_FAMILIES literals emitted in the compiled candidate template below;
+# they are the single source of truth used to validate a FeaturePlan's
+# `feature_families` before turning them into a feature_family_filter.
+_SCALAR_FAMILIES = {
+    "capacity_summary", "resistance_summary", "thermal_summary", "energy_summary",
+    "capacity_summary_delta", "resistance_summary_delta", "thermal_summary_delta",
+    "energy_summary_delta", "scalar_delta",
+}
+_CURVE_FAMILIES = {
+    "true_curve_shape", "true_curve_difference", "curve_difference_proxy",
+    "curve_difference_approximate", "curve_shape_proxy",
+}
+_BROAD_PHYSICS_EXTRA_FAMILIES = {
+    "learned_embedding_placeholder", "generic_timeseries_placeholder",
+}
+_PROTOCOL_FAMILIES = {"protocol"}
+
+
+def known_feature_families() -> set[str]:
+    """All feature-family names the toolbox/compiler recognizes.
+
+    A FeaturePlan may propose arbitrary free-text families (e.g. "efficiency");
+    only names in this set are meaningful as a feature_family_filter, so the
+    compiler intersects against it and drops the rest rather than filtering the
+    training matrix down to zero columns.
+    """
+    return (
+        _SCALAR_FAMILIES
+        | _CURVE_FAMILIES
+        | _BROAD_PHYSICS_EXTRA_FAMILIES
+        | _PROTOCOL_FAMILIES
+    )
+
 
 def _model_name(value: str | None) -> str:
     text = str(value or "").strip()
@@ -197,7 +232,19 @@ def candidate_spec_from_plans(
 ) -> CandidateSpec:
     model_family = normalize_model_family(model_plan.model_family, model_plan.estimator_name)
     target_transform = normalize_target_transform(model_plan.target_transform)
-    feature_set = normalize_feature_set(model_plan.feature_set)
+    # The FeatureScientist is the authoritative source for the feature set; fall
+    # back to the ModelArchitect's value only when the FeaturePlan left it unset.
+    # (Previously this read only model_plan.feature_set, so the FeatureScientist's
+    # choice never reached the trained model.)
+    feature_set = normalize_feature_set(feature_plan.feature_set or model_plan.feature_set)
+    # Turn the plan's proposed families into an actual filter, but only for names
+    # the toolbox recognizes -- unknown free-text families (e.g. "efficiency") are
+    # dropped so we never filter the training matrix down to zero columns.
+    feature_family_filter = [
+        family
+        for family in feature_plan.feature_families
+        if family in known_feature_families()
+    ]
     return CandidateSpec(
         run_id=run_id,
         parent_artifact_ids=parent_artifact_ids or [feature_plan.artifact_id, model_plan.artifact_id],
@@ -214,6 +261,7 @@ def candidate_spec_from_plans(
         feature_plan_artifact_id=feature_plan.artifact_id,
         model_plan_artifact_id=model_plan.artifact_id,
         feature_families=list(feature_plan.feature_families),
+        selected_columns=list(feature_plan.selected_columns),
         include_protocol_features=bool(feature_plan.include_protocol_features),
         model_family=model_family,
         target_transform=target_transform,
@@ -221,7 +269,7 @@ def candidate_spec_from_plans(
         feature_program_paths=list(feature_plan.feature_program_paths),
         feature_program_mode="table" if feature_plan.feature_program_paths else "none",
         include_feature_programs=bool(feature_plan.feature_program_paths),
-        feature_family_filter=[],
+        feature_family_filter=feature_family_filter,
         preprocessing=list(model_plan.preprocessing_steps) or ["drop_all_nan_columns", "SimpleImputer(strategy='median')"],
         hyperparameters=_clean_hyperparameters(model_family, model_plan.hyperparameters),
     )
@@ -239,6 +287,7 @@ def compile_candidate_spec_to_python(candidate_spec: CandidateSpec, output_path:
         "model_family": model_family,
         "target_transform": target_transform,
         "feature_set": feature_set,
+        "selected_columns": list(candidate_spec.selected_columns),
         "feature_program_paths": list(candidate_spec.feature_program_paths),
         "feature_program_mode": candidate_spec.feature_program_mode,
         "include_feature_programs": bool(candidate_spec.include_feature_programs),
@@ -262,6 +311,7 @@ INCLUDE_PROTOCOL_FEATURES = {constants["include_protocol_features"]!r}
 MODEL_FAMILY = {constants["model_family"]!r}
 TARGET_TRANSFORM = {constants["target_transform"]!r}
 FEATURE_SET = {constants["feature_set"]!r}
+SELECTED_COLUMNS = {constants["selected_columns"]!r}
 FEATURE_PROGRAM_PATHS = {constants["feature_program_paths"]!r}
 FEATURE_PROGRAM_MODE = {constants["feature_program_mode"]!r}
 INCLUDE_FEATURE_PROGRAMS = {constants["include_feature_programs"]!r}
@@ -359,15 +409,30 @@ def _families_for_feature_set(feature_set, allow_protocol):
     return families
 
 
+def _restrict_to_selected_columns(base_columns):
+    # The FeatureScientist's explicit column pick is a SUBSET restriction within
+    # the feature_set/family envelope: keep only agent-chosen columns that are
+    # actually buildable + in-bucket (drops hallucinated names). If the agent's
+    # list matches nothing in-bucket, fall back to the full bucket so training
+    # never sees an empty feature matrix.
+    if not SELECTED_COLUMNS:
+        return base_columns
+    wanted = set(SELECTED_COLUMNS)
+    chosen = [col for col in base_columns if col in wanted]
+    return chosen if chosen else base_columns
+
+
 def _select_feature_set_columns(features, feature_metadata, feature_set, allow_protocol):
     if feature_metadata is None or len(feature_metadata) == 0:
         if feature_set == "protocol_only":
-            return [col for col in features.columns if col.startswith("protocol_")]
-        if feature_set == "curve_only":
-            return [col for col in features.columns if "curve" in col or "qdiff" in col]
-        if feature_set == "scalar_only":
-            return [col for col in features.columns if not col.startswith("protocol_") and "curve" not in col and "qdiff" not in col]
-        return list(features.columns)
+            base = [col for col in features.columns if col.startswith("protocol_")]
+        elif feature_set == "curve_only":
+            base = [col for col in features.columns if "curve" in col or "qdiff" in col]
+        elif feature_set == "scalar_only":
+            base = [col for col in features.columns if not col.startswith("protocol_") and "curve" not in col and "qdiff" not in col]
+        else:
+            base = list(features.columns)
+        return _restrict_to_selected_columns(base)
     meta = feature_metadata.copy()
     if "feature_family" not in meta.columns and "family" in meta.columns:
         meta["feature_family"] = meta["family"]
@@ -381,7 +446,8 @@ def _select_feature_set_columns(features, feature_metadata, feature_set, allow_p
         if not allow_protocol:
             protocol_cols = set(meta.loc[meta["feature_family"].astype(str).isin(PROTOCOL_FAMILIES), "feature_name"].astype(str))
             selected -= protocol_cols
-    return [col for col in features.columns if col in selected]
+    base = [col for col in features.columns if col in selected]
+    return _restrict_to_selected_columns(base)
 
 
 def _feature_frame(metadata, cycle_summary, config, feature_columns=None):
