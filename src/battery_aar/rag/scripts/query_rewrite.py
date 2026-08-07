@@ -11,10 +11,11 @@ domain-focused queries suitable for the RAG knowledge base. The queries feed
 Usage:
     python -m battery_aar.rag.scripts.query_rewrite [--n 4]
         [--dataset-profile FILE.json] [--feature-probe FILE.json]
-        [--show-original]
+        [--query-style concept|question] [--show-original]
 
 Example:
     python -m battery_aar.rag.scripts.query_rewrite --n 4 --show-original
+    python -m battery_aar.rag.scripts.query_rewrite --n 4 --query-style question
 """
 
 from __future__ import annotations
@@ -30,6 +31,9 @@ from battery_aar.workflows.role_prompts import feature_scientist_prompt
 DEFAULT_N_QUERIES = 4
 REWRITE_TEMPERATURE = 0.3
 
+QUERY_STYLES = ("concept", "question")
+DEFAULT_QUERY_STYLE = "concept"
+
 REWRITER_SYSTEM_PROMPT = (
     "You are a query rewriter for a battery-science retrieval system. Given an "
     "agent task prompt, you extract the underlying scientific information needs "
@@ -37,14 +41,37 @@ REWRITER_SYSTEM_PROMPT = (
     "strings, nothing else."
 )
 
+# Per-style phrasing. Only the form of each query differs; the coverage,
+# domain-vocabulary, and ignore-bookkeeping rules below are held constant so
+# phrasing is the sole variable in a concept-vs-question A/B.
+_STYLE_ITEM_RULE = {
+    "concept": (
+        "Each query is one short phrase (roughly 5-15 words) about battery "
+        "science concepts the agent needs to ground its decisions in."
+    ),
+    "question": (
+        "Each query is a natural-language question (roughly 5-15 words) a "
+        "researcher would ask to ground the agent's decisions in battery science."
+    ),
+}
+_STYLE_RETURN_RULE = {
+    "concept": "Return a JSON array of exactly {n_queries} strings.",
+    "question": "Return a JSON array of exactly {n_queries} questions.",
+}
 
-def rewriter_user_prompt(original_prompt: str, n_queries: int) -> str:
+
+def rewriter_user_prompt(
+    original_prompt: str, n_queries: int, style: str = DEFAULT_QUERY_STYLE
+) -> str:
+    if style not in QUERY_STYLES:
+        raise ValueError(f"style must be one of {QUERY_STYLES}, got {style!r}")
+    item_rule = _STYLE_ITEM_RULE[style]
+    return_rule = _STYLE_RETURN_RULE[style].format(n_queries=n_queries)
     return f"""Rewrite the agent task prompt below into {n_queries} retrieval queries for a
 knowledge base of electrochemistry textbooks and battery aging papers.
 
 Rules:
-- Each query is one short phrase (roughly 5-15 words) about battery science
-  concepts the agent needs to ground its decisions in.
+- {item_rule}
 - Cover distinct aspects of the task (degradation physics, measurable
   early-cycle signals, feature/predictor constructions, protocol effects);
   do not produce near-duplicates.
@@ -52,7 +79,7 @@ Rules:
 - Ignore output-format instructions, JSON schemas, agent bookkeeping, and
   dataset column names.
 
-Return a JSON array of exactly {n_queries} strings.
+{return_rule}
 
 Agent task prompt:
 ---
@@ -111,13 +138,14 @@ def _extract_string_array(text: str) -> list[str]:
 def rewrite_queries(
     original_prompt: str,
     n_queries: int = DEFAULT_N_QUERIES,
+    style: str = DEFAULT_QUERY_STYLE,
 ) -> list[str]:
     """Rewrite an agent task prompt into retrieval queries via the .env LLM."""
     if n_queries < 1:
         raise ValueError("n_queries must be >= 1")
     reply = _chat(
         REWRITER_SYSTEM_PROMPT,
-        rewriter_user_prompt(original_prompt, n_queries),
+        rewriter_user_prompt(original_prompt, n_queries, style),
         REWRITE_TEMPERATURE,
     )
     return _extract_string_array(reply)
@@ -127,13 +155,14 @@ def feature_scientist_queries(
     dataset_profile: dict | None = None,
     feature_probe: dict | None = None,
     n_queries: int = DEFAULT_N_QUERIES,
+    style: str = DEFAULT_QUERY_STYLE,
 ) -> tuple[str, list[str]]:
     """Build the FeatureScientist prompt and rewrite it into retrieval queries.
 
     Returns (original_prompt, queries).
     """
     original = feature_scientist_prompt(dataset_profile or {}, feature_probe or {})
-    return original, rewrite_queries(original, n_queries=n_queries)
+    return original, rewrite_queries(original, n_queries=n_queries, style=style)
 
 
 def main() -> None:
@@ -145,11 +174,15 @@ def main() -> None:
                         help="JSON file with the feature probe fed to the prompt")
     parser.add_argument("--show-original", action="store_true",
                         help="also print the original FeatureScientist prompt")
+    parser.add_argument("--query-style", choices=QUERY_STYLES, default=DEFAULT_QUERY_STYLE,
+                        help="phrase queries as concept phrases or natural-language questions")
     args = parser.parse_args()
 
     profile = json.loads(args.dataset_profile.read_text()) if args.dataset_profile else {}
     probe = json.loads(args.feature_probe.read_text()) if args.feature_probe else {}
-    original, queries = feature_scientist_queries(profile, probe, n_queries=args.n)
+    original, queries = feature_scientist_queries(
+        profile, probe, n_queries=args.n, style=args.query_style
+    )
 
     if args.show_original:
         print("--- original FeatureScientist prompt ---")

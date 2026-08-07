@@ -27,11 +27,13 @@ Usage:
     python -m battery_aar.rag.scripts.eval_retrieval build-queries [--n 15]
     python -m battery_aar.rag.scripts.eval_retrieval build-judgments [--pool-k 8]
     python -m battery_aar.rag.scripts.eval_retrieval sweep --axis fusion|rerank|bm25|hnsw|all [--k 5]
+    python -m battery_aar.rag.scripts.eval_retrieval ab-query-style [--n 15] [--pool-k 8] [--k 6] [--rebuild]
 
 Example:
     python -m battery_aar.rag.scripts.eval_retrieval build-queries --n 15
     python -m battery_aar.rag.scripts.eval_retrieval build-judgments --pool-k 8
     python -m battery_aar.rag.scripts.eval_retrieval sweep --axis all --k 5
+    python -m battery_aar.rag.scripts.eval_retrieval ab-query-style --n 15 --pool-k 8 --k 6
 """
 
 from __future__ import annotations
@@ -45,7 +47,12 @@ from pathlib import Path
 from statistics import mean
 
 from battery_aar.rag.scripts import bm25_index, embed_index, hybrid_search, rerank
-from battery_aar.rag.scripts.query_rewrite import _chat, feature_scientist_queries
+from battery_aar.rag.scripts.query_rewrite import (
+    DEFAULT_QUERY_STYLE,
+    QUERY_STYLES,
+    _chat,
+    feature_scientist_queries,
+)
 
 RAG_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_CHUNKS_FILE = RAG_DIR / "processed" / "chunks.jsonl"
@@ -56,7 +63,24 @@ JUDGMENTS_FILE = EVAL_DIR / "judgments.json"
 DEFAULT_N_QUERIES = 15
 DEFAULT_POOL_K = 8
 DEFAULT_EVAL_K = 5
+# Production augmentation selects this many chunks (augmented_prompt.DEFAULT_K_CHUNKS);
+# the A/B evaluates at the same k so metrics reflect what the agent actually sees.
+DEFAULT_AB_K = 6
 RELEVANCE_THRESHOLD = 1  # grade >= this counts as "relevant" for recall/MRR
+
+
+def queries_path(style: str = DEFAULT_QUERY_STYLE) -> Path:
+    """Concept style keeps the canonical filename (shared with the sweep harness);
+    other styles get a suffixed file so both sets can coexist."""
+    if style == "concept":
+        return QUERIES_FILE
+    return EVAL_DIR / f"queries_{style}.json"
+
+
+def judgments_path(style: str = DEFAULT_QUERY_STYLE) -> Path:
+    if style == "concept":
+        return JUDGMENTS_FILE
+    return EVAL_DIR / f"judgments_{style}.json"
 
 JUDGE_SYSTEM_PROMPT = (
     "You grade retrieval relevance for a battery-science RAG system. Given a "
@@ -74,10 +98,12 @@ CHUNK_PREVIEW_CHARS = 600
 # --- 1. Query set: the real production query source --------------------
 
 
-def build_query_set(n_queries: int = DEFAULT_N_QUERIES) -> list[str]:
+def build_query_set(
+    n_queries: int = DEFAULT_N_QUERIES, style: str = DEFAULT_QUERY_STYLE
+) -> list[str]:
     """Retrieval queries from the real FeatureScientist prompt (not synthetic
     per-chunk questions), via the production query rewriter."""
-    _, queries = feature_scientist_queries(n_queries=n_queries)
+    _, queries = feature_scientist_queries(n_queries=n_queries, style=style)
     return queries
 
 
@@ -359,6 +385,55 @@ def sweep_hnsw(
 SWEEPS = {"fusion": sweep_fusion, "rerank": sweep_rerank, "bm25": sweep_bm25, "hnsw": sweep_hnsw}
 
 
+# --- 5. Query-style A/B (concept vs question) ------------------------------
+
+
+def _production_retrieve_fn(k: int):
+    """The retrieval config the FeatureScientist actually uses in production
+    (augmented_prompt.py): RRF hybrid, ~20 candidates per query, reranked."""
+    return lambda q: rerank.retrieve_and_rerank(q, k=k, candidates=20, fusion="rrf")
+
+
+def _load_or_build_style(
+    style: str, n_queries: int, pool_k: int, rebuild: bool
+) -> tuple[list[str], dict[str, dict[str, int]]]:
+    """Fetch (queries, judgments) for a style, reusing cached files unless
+    --rebuild is set. Queries and judgments are cached together so a stale
+    judgment set can never be scored against a freshly regenerated query set."""
+    q_path, j_path = queries_path(style), judgments_path(style)
+    if not rebuild and q_path.exists() and j_path.exists():
+        print(f"[{style}] reusing cached {q_path.name} + {j_path.name}")
+        return load_query_set(q_path), load_judgments(j_path)
+
+    print(f"[{style}] building {n_queries} queries via the rewriter...")
+    queries = build_query_set(n_queries, style=style)
+    save_query_set(queries, q_path)
+    print(f"[{style}] judging pooled candidates (pool_k={pool_k})...")
+    judgments = build_judgments(queries, pool_k)
+    save_judgments(judgments, j_path)
+    return queries, judgments
+
+
+def ab_query_style(
+    n_queries: int = DEFAULT_N_QUERIES,
+    pool_k: int = DEFAULT_POOL_K,
+    k: int = DEFAULT_AB_K,
+    rebuild: bool = False,
+) -> list[dict]:
+    """Compare concept- vs question-phrased rewrites on retrieval metrics,
+    each scored against its own judged pool using the production retriever."""
+    retrieve_fn = _production_retrieve_fn(k)
+    rows = []
+    for style in QUERY_STYLES:
+        queries, judgments = _load_or_build_style(style, n_queries, pool_k, rebuild)
+        print(f"\n--- {style} queries ---")
+        for i, q in enumerate(queries, 1):
+            print(f"  [{i}] {q}")
+        row = evaluate_config(queries, judgments, retrieve_fn, k)
+        rows.append({"style": style, **row})
+    return rows
+
+
 def print_table(rows: list[dict]) -> None:
     if not rows:
         print("(no rows)")
@@ -390,6 +465,13 @@ def main() -> None:
     p_sweep.add_argument("--axis", choices=[*SWEEPS, "all"], default="all")
     p_sweep.add_argument("--k", type=int, default=DEFAULT_EVAL_K)
 
+    p_ab = sub.add_parser("ab-query-style", help="compare concept- vs question-phrased rewrites")
+    p_ab.add_argument("--n", type=int, default=DEFAULT_N_QUERIES)
+    p_ab.add_argument("--pool-k", type=int, default=DEFAULT_POOL_K)
+    p_ab.add_argument("--k", type=int, default=DEFAULT_AB_K)
+    p_ab.add_argument("--rebuild", action="store_true",
+                      help="regenerate queries + judgments even if cached files exist")
+
     args = parser.parse_args()
 
     if args.command == "build-queries":
@@ -403,6 +485,16 @@ def main() -> None:
         judgments = build_judgments(queries, args.pool_k)
         save_judgments(judgments)
         print(f"judgments -> {JUDGMENTS_FILE}")
+    elif args.command == "ab-query-style":
+        rows = ab_query_style(args.n, args.pool_k, args.k, args.rebuild)
+        print("\n=== query-style A/B (production retriever: rrf hybrid + rerank) ===")
+        print_table(rows)
+        print(
+            "\nNote: each style is scored against its own LLM-judged pool (queries "
+            "aren't tied to source chunks). Both cover the same task aspects, so this "
+            "measures the end-to-end retrieval outcome per phrasing, not a controlled "
+            "per-query test. Metrics are at k={} to match production chunk selection.".format(args.k)
+        )
     else:
         queries = load_query_set()
         judgments = load_judgments()
