@@ -35,6 +35,15 @@ tools = [
   "httpx>=0.27",
   "uvicorn>=0.29",
 ]
+rag = [
+  "pymupdf>=1.24",
+  "bm25s>=0.2",
+  "PyStemmer>=2.2",
+  "hnswlib>=0.8",
+  "openai>=1.40",
+  "python-dotenv>=1",
+  "sentence-transformers>=2.7",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

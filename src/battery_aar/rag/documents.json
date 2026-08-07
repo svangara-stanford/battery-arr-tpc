@@ -1,0 +1,65 @@
+{
+  "_comment": "Hand-maintained document catalog for the RAG knowledge base. Add an entry here for every PDF placed in pdfs/ (keyed by filename stem); chunking fails loudly for uncatalogued PDFs. Tags must come from _tag_vocabulary. This file doubles as the corpus table for the paper.",
+  "_tag_vocabulary": {
+    "electrochemistry-fundamentals": "thermodynamics, Nernst equation, electrode kinetics (e.g. Butler-Volmer), physical meaning of voltage/current behavior",
+    "degradation-mechanisms": "SEI growth, lithium plating, loss of active material / lithium inventory, capacity fade physics",
+    "charging-protocols": "CC/CV, fast charging, charge/discharge protocol design and terminology",
+    "battery-characterization": "cycling tests, EIS, pulse tests, capacity and internal resistance measurement methods",
+    "battery-lifetime": "aging studies, RUL/SoH estimation, early-cycle lifetime prediction",
+    "thermal-effects": "temperature dependence of battery behavior, thermal management",
+    "cell-design": "cell formats, materials and manufacturing, series/parallel pack behavior"
+  },
+  "_doc_types": ["textbook", "paper", "review"],
+  "documents": {
+    "battery-technology-boerger-70-97": {
+      "title": "Battery Technology: Fundamentals of Battery Electrochemistry, Systems and Applications (Börger), Ch. 3: Charging and Discharging Cells and Batteries",
+      "doc_type": "textbook",
+      "year": 2025,
+      "tags": [
+        "charging-protocols",
+        "battery-characterization",
+        "electrochemistry-fundamentals"
+      ]
+    },
+    "Battery Management Systems Volume I_ Battery Modeling - 2015 - Plett": {
+      "title": "Battery Management Systems, Volume I: Battery Modeling (Plett)",
+      "doc_type": "textbook",
+      "year": 2015,
+      "tags": [
+        "electrochemistry-fundamentals",
+        "battery-characterization",
+        "battery-lifetime"
+      ]
+    },
+    "Battery Systems Engineering - 2013 - Rahn": {
+      "title": "Battery Systems Engineering (Rahn, Wang)",
+      "doc_type": "textbook",
+      "year": 2013,
+      "tags": [
+        "electrochemistry-fundamentals",
+        "thermal-effects",
+        "cell-design"
+      ]
+    },
+    "Design and Analysis of Large Lithium-Ion Battery Systems - 2014 - Pesaran": {
+      "title": "Design and Analysis of Large Lithium-Ion Battery Systems (Pesaran et al.)",
+      "doc_type": "textbook",
+      "year": 2014,
+      "tags": [
+        "cell-design",
+        "thermal-effects",
+        "battery-lifetime"
+      ]
+    },
+    "High Energy Density Lithium Batteries - 2010 - Aifantis": {
+      "title": "High Energy Density Lithium Batteries: Materials, Engineering, Applications (Aifantis, Hackney, Kumar, eds.)",
+      "doc_type": "textbook",
+      "year": 2010,
+      "tags": [
+        "electrochemistry-fundamentals",
+        "degradation-mechanisms",
+        "cell-design"
+      ]
+    }
+  }
+}

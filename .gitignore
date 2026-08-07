@@ -33,3 +33,8 @@ dist/
 .venv/
 venv/
 env/
+
+# --- RAG derived artifacts (reproducible via battery_aar.rag.process_pdfs) ---
+src/battery_aar/rag/processed/
+src/battery_aar/rag/pdfs/
+src/battery_aar/rag/documents.json

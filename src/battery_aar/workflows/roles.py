@@ -292,6 +292,7 @@ class RoleContext:
     include_feature_programs: bool = False
     feature_family_filter: list[str] | None = None
     feature_program_recipe: str | None = None
+    rag_augment: bool = True
 
 
 class DatasetProfiler:
@@ -312,6 +313,34 @@ class DatasetProfiler:
 
 class FeatureScientist:
     role_name = "FeatureScientist"
+
+    @staticmethod
+    def _augmented_prompt(
+        ctx: RoleContext, dataset_profile: dict[str, Any], probe: dict[str, Any]
+    ) -> tuple[str, str | None, str | None]:
+        """Build the role prompt, RAG-augmented when enabled.
+
+        Returns (prompt, rag_summary, rag_error). Any RAG failure (missing
+        indexes, missing optional deps, retrieval errors) falls back to the
+        plain prompt so the workflow never breaks on the augmentation path.
+        """
+        original = feature_scientist_prompt(dataset_profile, probe)
+        if not ctx.rag_augment:
+            return original, None, None
+        try:
+            from battery_aar.rag.scripts.augmented_prompt import (
+                augment_feature_scientist_prompt,
+            )
+
+            augmented = augment_feature_scientist_prompt(dataset_profile, probe)
+            summary = (
+                f"RAG context: {len(augmented.chunks)} chunks "
+                f"{[chunk['chunk_id'] for chunk in augmented.chunks]} "
+                f"from queries {augmented.queries}; trace={augmented.trace_path}"
+            )
+            return augmented.prompt, summary, None
+        except Exception as exc:
+            return original, None, f"{type(exc).__name__}: {exc}"
 
     def run(self, ctx: RoleContext, dataset_profile: dict[str, Any], parent_ids: list[str], iteration: int) -> FeaturePlan:
         feature_response = ctx.tool_client.build_battery_features(
@@ -366,9 +395,21 @@ class FeatureScientist:
                 constraints=["row_id and cell_id are join keys only", "batch 9 is not used during surrogate search"],
             )
         else:
+            prompt, rag_summary, rag_error = self._augmented_prompt(ctx, dataset_profile, probe)
+            if ctx.rag_augment:
+                ctx.trace.log_agent_message(
+                    event_type="rag_prompt_augmentation",
+                    iteration=iteration,
+                    agent_role=AgentRole.FEATURE_ENGINEER,
+                    agent_id="feature_scientist",
+                    input_artifact_ids=all_parent_ids,
+                    success=rag_error is None,
+                    error_message=rag_error,
+                    message_summary=rag_summary or "RAG augmentation failed; plain prompt used",
+                )
             payload = _llm_json(
                 self.role_name,
-                feature_scientist_prompt(dataset_profile, probe),
+                prompt,
                 "FeaturePlan keys: agent_id, feature_families, selected_columns, include_protocol_features, max_cycle, rationale, constraints",
                 model=ctx.model,
             )
