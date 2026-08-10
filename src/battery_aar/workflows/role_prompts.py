@@ -38,30 +38,55 @@ def _json_block(payload: dict[str, Any]) -> str:
     return json.dumps(payload, indent=2, sort_keys=True, default=str)
 
 
-def feature_scientist_prompt(dataset_profile: dict[str, Any], feature_probe: dict[str, Any]) -> str:
+FEATURE_OPERATOR_MENU = """Available feature operators (choose operator_type from this fixed menu):
+- "cycle_scalar": one signal's value at specific early cycles. y_signal in
+  {discharge_capacity, charge_capacity, discharge_energy, charge_energy}.
+- "cycle_window_stats": statistics of a signal over an early-cycle window
+  (mean/std/min/max/slope). y_signal as above.
+- "cross_cycle_scalar_delta": change in a scalar signal between two cycles
+  (e.g. cycle 100 minus cycle 10). y_signal as above.
+- "curve_shape": shape statistics of a per-cycle curve (area, curvature, slope).
+  y_signal in {discharge_capacity, charge_capacity, current, temperature}.
+- "cross_cycle_curve_delta": difference between per-cycle curves across cycles
+  (the Severson dQ(V) family). y_signal = discharge_capacity.
+"""
+
+
+def feature_scientist_prompt(
+    dataset_profile: dict[str, Any],
+    feature_probe: dict[str, Any],
+    feature_budget: int | None = None,
+) -> str:
+    budget_line = (
+        f"\nFEATURE BUDGET: select AT MOST {feature_budget} feature operators. "
+        "Choose the ones most predictive of lifetime and justify EACH from battery "
+        "degradation principles (and from any reference excerpts provided above). "
+        "Spending the budget on redundant or low-value operators wastes it.\n"
+        if feature_budget is not None
+        else ""
+    )
     return f"""Propose a FeaturePlan JSON object for an early-cycle battery lifetime predictor.
 
 Candidate-facing data use row_id and cell_id only as join keys. They must not be model features.
 Allowed feature sources are candidate-facing metadata and first-100-cycle summaries.
 
-The feature probe below lists the EXISTING baseline feature library. Your job is to propose
-NEW, better features beyond that library — engineered from the raw candidate-facing columns —
-not merely to re-select the probe's features. You may keep useful existing features as a baseline.
+Your job is to SELECT which feature operators best predict cycle life, from the
+fixed menu below. Each operator you pick is compiled deterministically into feature
+columns — you are choosing *which physics to measure*, not writing code.
 
-Every new feature you propose MUST be implementable by a downstream code generator. Put the
-precise definitions in `feature_program_recipe` as a JSON object mapping each new feature name to:
-- "inputs": the exact candidate-facing columns it is computed from
-- "cycle_window": which cycle_index range it uses (e.g. [2, 100])
-- "formula": an unambiguous formula or short pseudocode (aggregations, slopes, ratios, log-transforms, per-cell)
-Vague family names without formulas will be ignored downstream and waste the iteration.
+{FEATURE_OPERATOR_MENU}
+{budget_line}
+Return your choices in `feature_operators`: a JSON list where each item is
+{{"operator_type": <one of the menu names>, "y_signal": <signal>,
+  "aggregation": <optional, e.g. mean/std/slope/area/curvature/delta>,
+  "hypothesis": <one line: why this predicts lifetime>}}.
 
-Strong plans should reason from general battery degradation principles, for example:
-- early capacity level and retention; capacity-fade slopes, curvature, variance, early-window statistics
-- resistance, thermal, energy, and efficiency signals and their cross-cycle trends when available
-- charge/discharge curve-shape statistics and cross-cycle deltas
-- conservative protocol-current features only when explicitly allowed
+Strong choices reason from general battery degradation principles, for example:
+- early capacity level and retention; capacity-fade slopes, curvature, variance
+- energy signals and their cross-cycle trends
+- charge/discharge curve-shape statistics and cross-cycle deltas (dQ(V))
 
-Do not assume a particular paper feature set, coefficient vector, target transform, or model family. The goal is to discover transferable early-life predictors from the available early-cycle data and validation feedback.
+Do not assume a particular paper feature set, coefficient vector, target transform, or model family.
 
 Dataset profile:
 {_json_block(dataset_profile)}
@@ -70,8 +95,7 @@ Feature probe:
 {_json_block(feature_probe)}
 
 Return JSON with keys:
-agent_id, feature_families, selected_columns, include_protocol_features, feature_program_ids,
-feature_program_recipe, feature_set, max_cycle, rationale, constraints
+agent_id, feature_operators, include_protocol_features, feature_set, max_cycle, rationale, constraints
 """
 
 

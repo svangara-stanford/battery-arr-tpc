@@ -67,6 +67,12 @@ class RoleGraphConfig:
     feature_family_filter: list[str] | None = None
     cycle_early_index: int = 9
     cycle_late_index: int = 99
+    # When False, the FeatureScientist prompt is NOT augmented with retrieved
+    # literature context -- an LLM-only ablation isolating the RAG contribution.
+    rag_augment: bool = True
+    # Hard cap on feature columns the FeatureScientist's operator specs select.
+    # None = uncapped. A tight budget makes operator choice a knowledge decision.
+    feature_budget: int | None = None
 
 
 def _load_processed(processed_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Path | None, pd.DataFrame | None]:
@@ -654,6 +660,8 @@ class RoleGraphRunner:
                 "feature_family_filter": list(cfg.feature_family_filter or []),
                 "cycle_early_index": cfg.cycle_early_index,
                 "cycle_late_index": cfg.cycle_late_index,
+                "rag_augment": cfg.rag_augment,
+                "feature_budget": cfg.feature_budget,
             },
             tags=["role_graph", "open_battery_agents_v2"],
         )
@@ -719,6 +727,8 @@ class RoleGraphRunner:
             include_feature_programs=cfg.include_feature_programs,
             feature_family_filter=list(cfg.feature_family_filter or []),
             feature_program_recipe=cfg.feature_program_recipe,
+            rag_augment=cfg.rag_augment,
+            feature_budget=cfg.feature_budget,
         )
 
         profile, profile_artifact_ids = DatasetProfiler().run(ctx, parent_ids=[manifest.artifact_id])
@@ -1103,6 +1113,8 @@ def run_role_workflow(
     feature_family_filter: list[str] | None = None,
     cycle_early_index: int = 9,
     cycle_late_index: int = 99,
+    rag_augment: bool = True,
+    feature_budget: int | None = None,
     # Patch E4: source-agnostic secondary-test contract.
     secondary_test_source: str = "severson_b3",
     secondary_test_path: str | Path | None = None,
@@ -1186,6 +1198,8 @@ def run_role_workflow(
         feature_family_filter=list(feature_family_filter or []),
         cycle_early_index=cycle_early_index,
         cycle_late_index=cycle_late_index,
+        rag_augment=rag_augment,
+        feature_budget=feature_budget,
         secondary_test_source=secondary_test_source,
         secondary_test_path=Path(secondary_test_path) if secondary_test_path else None,
         secondary_test_feature_program_path=Path(secondary_test_feature_program_path) if secondary_test_feature_program_path else None,

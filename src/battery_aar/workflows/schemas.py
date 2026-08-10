@@ -97,6 +97,15 @@ class FeaturePlan(ArtifactBase):
     feature_program_ids: List[str] = Field(default_factory=list)
     feature_program_paths: List[str] = Field(default_factory=list)
     feature_program_recipe: Optional[str] = None
+    # Structured operator specs the FeatureScientist selected from the fixed
+    # operator menu. Unlike the free-text feature_program_recipe (kept for
+    # rationale/back-compat), these are validated and deterministically compiled
+    # into feature columns -- see operator_spec_selector.py.
+    feature_operators: List[FeatureOperatorSpec] = Field(default_factory=list)
+    # Hard cap on how many feature columns the operator specs may select. None
+    # means uncapped. A tight budget is what makes operator choice a knowledge
+    # decision (see docs/structured_feature_specs_plan.md).
+    feature_budget: Optional[int] = None
     feature_set: str = "all_available"
     max_cycle: Optional[int] = None
     rationale: Optional[str] = None
@@ -140,6 +149,11 @@ class CandidateSpec(ArtifactBase):
     feature_program_mode: str = "none"
     include_feature_programs: bool = False
     feature_family_filter: List[str] = Field(default_factory=list)
+    # Explicit column allowlist compiled from the FeaturePlan's operator specs
+    # (see operator_spec_selector.py). When non-empty, the candidate trains on
+    # exactly these columns -- the mechanism that lets the agent's budgeted
+    # operator choices actually drive the model.
+    feature_column_allowlist: List[str] = Field(default_factory=list)
     preprocessing: List[str] = Field(default_factory=list)
     hyperparameters: Dict[str, Any] = Field(default_factory=dict)
 

@@ -184,6 +184,55 @@ def _clean_hyperparameters(model_family: str, hyperparameters: dict[str, Any] | 
     return cleaned
 
 
+def _feature_metadata_path_for(program_path: str | Path) -> Path:
+    """Resolve a program-table dir/file to its feature_metadata.csv."""
+    p = Path(program_path)
+    if p.is_dir():
+        return p / "feature_metadata.csv"
+    if p.name == "feature_table.csv":
+        return p.parent / "feature_metadata.csv"
+    return p.parent / "feature_metadata.csv"
+
+
+def _resolve_operator_column_allowlist(feature_plan: FeaturePlan) -> list[str]:
+    """Compile the plan's operator specs into an explicit column allowlist.
+
+    Tier B: map each operator spec to the columns it selects in the plan's
+    materialized program table (by operator_type / y_signal / aggregation),
+    honoring feature_budget. Returns [] when there are no operators, no program
+    table, or the metadata can't be read -- callers then fall back to the
+    existing family/feature_set behavior.
+    """
+    if not feature_plan.feature_operators or not feature_plan.feature_program_paths:
+        return []
+    try:
+        import pandas as pd
+
+        from battery_aar.features.operator_spec_selector import select_columns_for_specs
+    except Exception:
+        return []
+    frames = []
+    for program_path in feature_plan.feature_program_paths:
+        meta_path = _feature_metadata_path_for(program_path)
+        if Path(meta_path).exists():
+            try:
+                frames.append(pd.read_csv(meta_path))
+            except Exception:
+                continue
+    if not frames:
+        return []
+    metadata = frames[0] if len(frames) == 1 else pd.concat(frames, ignore_index=True)
+    specs = [
+        {
+            "operator_type": spec.operator_type,
+            "params": dict(spec.params or {}),
+        }
+        for spec in feature_plan.feature_operators
+    ]
+    selection = select_columns_for_specs(metadata, specs, budget=feature_plan.feature_budget)
+    return list(selection.columns)
+
+
 def candidate_spec_from_plans(
     *,
     run_id: str,
@@ -198,6 +247,9 @@ def candidate_spec_from_plans(
     model_family = normalize_model_family(model_plan.model_family, model_plan.estimator_name)
     target_transform = normalize_target_transform(model_plan.target_transform)
     feature_set = normalize_feature_set(model_plan.feature_set)
+    # Tier B: compile the FeatureScientist's operator specs into an explicit
+    # column allowlist so the agent's budgeted choices actually drive the model.
+    column_allowlist = _resolve_operator_column_allowlist(feature_plan)
     return CandidateSpec(
         run_id=run_id,
         parent_artifact_ids=parent_artifact_ids or [feature_plan.artifact_id, model_plan.artifact_id],
@@ -222,6 +274,7 @@ def candidate_spec_from_plans(
         feature_program_mode="table" if feature_plan.feature_program_paths else "none",
         include_feature_programs=bool(feature_plan.feature_program_paths),
         feature_family_filter=[],
+        feature_column_allowlist=column_allowlist,
         preprocessing=list(model_plan.preprocessing_steps) or ["drop_all_nan_columns", "SimpleImputer(strategy='median')"],
         hyperparameters=_clean_hyperparameters(model_family, model_plan.hyperparameters),
     )
@@ -243,6 +296,7 @@ def compile_candidate_spec_to_python(candidate_spec: CandidateSpec, output_path:
         "feature_program_mode": candidate_spec.feature_program_mode,
         "include_feature_programs": bool(candidate_spec.include_feature_programs),
         "feature_family_filter": list(candidate_spec.feature_family_filter),
+        "feature_column_allowlist": list(candidate_spec.feature_column_allowlist),
         "preprocessing": list(candidate_spec.preprocessing),
         "hyperparameters": hyperparameters,
     }
@@ -266,6 +320,7 @@ FEATURE_PROGRAM_PATHS = {constants["feature_program_paths"]!r}
 FEATURE_PROGRAM_MODE = {constants["feature_program_mode"]!r}
 INCLUDE_FEATURE_PROGRAMS = {constants["include_feature_programs"]!r}
 FEATURE_FAMILY_FILTER = {constants["feature_family_filter"]!r}
+FEATURE_COLUMN_ALLOWLIST = {constants["feature_column_allowlist"]!r}
 PREPROCESSING = {constants["preprocessing"]!r}
 HYPERPARAMETERS = {constants["hyperparameters"]!r}
 IDENTIFIER_COLUMNS = {{
@@ -405,6 +460,12 @@ def _feature_frame(metadata, cycle_summary, config, feature_columns=None):
         feature_family_filter=feature_family_filter,
     )
     selected_columns = _select_feature_set_columns(features, feature_metadata, FEATURE_SET, allow_protocol)
+    if FEATURE_COLUMN_ALLOWLIST:
+        # Restrict to the agent's operator-selected columns (Tier B). Preserve
+        # the feature_set ordering; keep only allowlisted columns that exist.
+        allow = set(FEATURE_COLUMN_ALLOWLIST)
+        base = selected_columns or list(features.columns)
+        selected_columns = [col for col in base if col in allow]
     features = features[selected_columns] if selected_columns else features.iloc[:, 0:0]
     key_name = features.index.name or "row_id"
     features = features.reset_index().rename(columns={{key_name: "row_id"}})

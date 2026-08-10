@@ -26,7 +26,7 @@ _PROBE = {
 
 
 def test_no_rag_returns_plain_prompt_without_retrieval():
-    ctx = SimpleNamespace(rag_augment=False)
+    ctx = SimpleNamespace(rag_augment=False, feature_budget=None)
     prompt, summary, error = FeatureScientist._augmented_prompt(ctx, _DATASET_PROFILE, _PROBE)
 
     # Plain prompt, byte-for-byte, and no RAG bookkeeping.
@@ -43,7 +43,7 @@ def test_rag_enabled_prepends_retrieved_context():
     # this environment the code falls back to the plain prompt AND reports an
     # error string -- assert on whichever branch actually ran, so the test is
     # robust offline but still proves the no-RAG path differs.
-    ctx = SimpleNamespace(rag_augment=True)
+    ctx = SimpleNamespace(rag_augment=True, feature_budget=None)
     plain = feature_scientist_prompt(_DATASET_PROFILE, _PROBE)
     prompt, summary, error = FeatureScientist._augmented_prompt(ctx, _DATASET_PROFILE, _PROBE)
 

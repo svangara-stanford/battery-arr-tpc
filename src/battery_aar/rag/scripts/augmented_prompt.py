@@ -208,11 +208,14 @@ def augment_prompt(
 def augment_feature_scientist_prompt(
     dataset_profile: dict | None = None,
     feature_probe: dict | None = None,
+    feature_budget: int | None = None,
     **kwargs,
 ) -> AugmentedPrompt:
     """FeatureScientist-specific entry point: original prompt from
     workflows/role_prompts.py, augmented with retrieved context."""
-    original = feature_scientist_prompt(dataset_profile or {}, feature_probe or {})
+    original = feature_scientist_prompt(
+        dataset_profile or {}, feature_probe or {}, feature_budget=feature_budget
+    )
     return augment_prompt(original, **kwargs)
 
 

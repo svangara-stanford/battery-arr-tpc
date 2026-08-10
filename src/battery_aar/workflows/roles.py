@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import time
 from dataclasses import dataclass
@@ -30,12 +31,15 @@ from battery_aar.workflows.schemas import (
     ChampionShortlist,
     CritiqueReport,
     EvaluationReport,
+    FeatureOperatorSpec,
     FeaturePlan,
     ModelPlan,
     ReviewReport,
 )
 from battery_aar.workflows.trace import TraceLogger
 
+
+logger = logging.getLogger(__name__)
 
 _CODE_FENCE_RE = re.compile(r"```[A-Za-z0-9_+-]*[ \t]*\n(.*?)(?:\n```|\Z)", re.DOTALL)
 
@@ -181,6 +185,59 @@ def _as_dict_or_empty(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _parse_feature_operators(
+    value: Any, feature_budget: int | None = None
+) -> tuple[list[FeatureOperatorSpec], dict[str, Any]]:
+    """Parse + validate LLM-proposed operator specs into FeatureOperatorSpecs.
+
+    Operator names are validated against the fixed operator registry; unknown
+    ones are dropped (never executed) -- the model-independence guard. If a
+    ``feature_budget`` is given, at most that many specs are kept (the agent's
+    first N, so its top picks are honored). Returns the validated specs plus a
+    bookkeeping dict for tracing.
+    """
+    from battery_aar.features.operator_registry import default_operator_registry
+
+    valid_names = {d["name"] for d in default_operator_registry().available_operators()}
+    raw = value if isinstance(value, list) else []
+    n_proposed = len(raw)
+    specs: list[FeatureOperatorSpec] = []
+    dropped: list[str] = []
+    for item in raw:
+        item = _as_dict_or_empty(item)
+        op = _as_str_or(item.get("operator_type") or item.get("operator_name"), None)
+        if not op or op not in valid_names:
+            dropped.append(str(op))
+            continue
+        params = _as_dict_or_empty(item.get("params"))
+        for key in ("y_signal", "aggregation"):
+            if item.get(key) is not None and key not in params:
+                params[key] = item[key]
+        specs.append(
+            FeatureOperatorSpec(
+                operator_name=op,
+                operator_type=op,
+                family=_as_str_or(item.get("family"), op) or op,
+                params=params,
+                description=_as_str_or(item.get("hypothesis") or item.get("description"), None),
+            )
+        )
+    n_valid = len(specs)
+    over_budget = False
+    if feature_budget is not None and len(specs) > feature_budget:
+        specs = specs[:feature_budget]
+        over_budget = True
+    info = {
+        "n_proposed": n_proposed,
+        "n_valid": n_valid,
+        "n_kept": len(specs),
+        "dropped_operator_names": dropped,
+        "budget": feature_budget,
+        "budget_enforced": over_budget,
+    }
+    return specs, info
+
+
 def _call_llm(role_name: str, prompt: str, model: str | None = None) -> str:
     from openai import OpenAI
 
@@ -191,6 +248,11 @@ def _call_llm(role_name: str, prompt: str, model: str | None = None) -> str:
     if config.default_headers:
         client_kwargs["default_headers"] = config.default_headers
     client = OpenAI(**client_kwargs)
+    # CodeGenerator emits full candidate modules; capable models (e.g. Sonnet)
+    # write hundreds of lines and are silently truncated by the endpoint's
+    # default completion cap, producing unparseable candidates. Give code
+    # generation a generous ceiling and keep other roles modest.
+    max_tokens = 8192 if role_name == "CodeGenerator" else 2048
     response = client.chat.completions.create(
         model=config.model,
         messages=[
@@ -198,8 +260,16 @@ def _call_llm(role_name: str, prompt: str, model: str | None = None) -> str:
             {"role": "user", "content": prompt},
         ],
         temperature=0.2 if role_name != "CodeGenerator" else 0.35,
+        max_tokens=max_tokens,
     )
-    return response.choices[0].message.content or ""
+    choice = response.choices[0]
+    if getattr(choice, "finish_reason", None) == "length":
+        logger.warning(
+            "LLM response for role %s was truncated at max_tokens=%d "
+            "(finish_reason='length'); output may be incomplete.",
+            role_name, max_tokens,
+        )
+    return choice.message.content or ""
 
 
 def _llm_json(role_name: str, prompt: str, schema_hint: str, model: str | None = None) -> dict[str, Any]:
@@ -293,6 +363,7 @@ class RoleContext:
     feature_family_filter: list[str] | None = None
     feature_program_recipe: str | None = None
     rag_augment: bool = True
+    feature_budget: int | None = None
 
 
 class DatasetProfiler:
@@ -324,7 +395,7 @@ class FeatureScientist:
         indexes, missing optional deps, retrieval errors) falls back to the
         plain prompt so the workflow never breaks on the augmentation path.
         """
-        original = feature_scientist_prompt(dataset_profile, probe)
+        original = feature_scientist_prompt(dataset_profile, probe, feature_budget=ctx.feature_budget)
         if not ctx.rag_augment:
             return original, None, None
         try:
@@ -332,7 +403,9 @@ class FeatureScientist:
                 augment_feature_scientist_prompt,
             )
 
-            augmented = augment_feature_scientist_prompt(dataset_profile, probe)
+            augmented = augment_feature_scientist_prompt(
+                dataset_profile, probe, feature_budget=ctx.feature_budget
+            )
             summary = (
                 f"RAG context: {len(augmented.chunks)} chunks "
                 f"{[chunk['chunk_id'] for chunk in augmented.chunks]} "
@@ -410,10 +483,27 @@ class FeatureScientist:
             payload = _llm_json(
                 self.role_name,
                 prompt,
-                "FeaturePlan keys: agent_id, feature_families, selected_columns, include_protocol_features, max_cycle, rationale, constraints",
+                "FeaturePlan keys: agent_id, feature_operators, include_protocol_features, feature_set, max_cycle, rationale, constraints",
                 model=ctx.model,
             )
             rationale_text = _as_str_or(payload.get("rationale"), None)
+            feature_operators, operator_info = _parse_feature_operators(
+                payload.get("feature_operators"), ctx.feature_budget
+            )
+            ctx.trace.log_agent_message(
+                event_type="feature_operators_selected",
+                iteration=iteration,
+                agent_role=AgentRole.FEATURE_ENGINEER,
+                agent_id="feature_scientist",
+                input_artifact_ids=all_parent_ids,
+                success=True,
+                message_summary=(
+                    f"operators proposed={operator_info['n_proposed']} "
+                    f"valid={operator_info['n_valid']} kept={operator_info['n_kept']} "
+                    f"budget={operator_info['budget']} "
+                    f"dropped={operator_info['dropped_operator_names']}"
+                ),
+            )
             plan = FeaturePlan(
                 run_id=ctx.run_id,
                 parent_artifact_ids=all_parent_ids,
@@ -422,6 +512,8 @@ class FeatureScientist:
                 iteration=iteration,
                 feature_families=_as_str_list(payload.get("feature_families", [])),
                 selected_columns=_as_str_list(payload.get("selected_columns", [])),
+                feature_operators=feature_operators,
+                feature_budget=ctx.feature_budget,
                 include_protocol_features=bool(payload.get("include_protocol_features", ctx.allow_protocol_features)),
                 feature_program_ids=_as_str_list(payload.get("feature_program_ids", [])),
                 feature_program_paths=list(ctx.feature_program_paths or []),

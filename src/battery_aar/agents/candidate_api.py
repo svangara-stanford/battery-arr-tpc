@@ -82,14 +82,44 @@ def _install_feature_capture(phase: dict[str, str], calls: list[dict[str, Any]])
     _blf.build_all_battery_features = _recording
 
 
-def _features_used_summary(calls: list[dict[str, Any]]) -> dict[str, Any]:
+def _model_state_feature_columns(model: Any) -> list[str] | None:
+    """Best-effort extraction of the columns a fitted candidate ACTUALLY used.
+
+    Compiled and baseline candidates return a state dict carrying
+    ``feature_columns`` (the final, post-selection column list). This is the
+    authoritative count of what the model trained on -- unlike the feature
+    builder's output, which is captured pre-filter (e.g. before an operator-spec
+    column allowlist narrows 630 built columns down to a budgeted few).
+    """
+    if isinstance(model, dict):
+        cols = model.get("feature_columns")
+        if isinstance(cols, (list, tuple)):
+            return [str(c) for c in cols]
+    return None
+
+
+def _features_used_summary(
+    calls: list[dict[str, Any]], fit_columns: list[str] | None = None
+) -> dict[str, Any]:
     fit_calls = [call for call in calls if call["phase"] == "fit"]
     last_fit = fit_calls[-1] if fit_calls else None
+    builder_columns = list(last_fit["feature_columns"]) if last_fit else []
+    # Prefer the model's actual fit columns; fall back to the builder output
+    # (e.g. for freeform candidates that don't return a feature_columns state).
+    if fit_columns is not None:
+        actual_columns = list(fit_columns)
+    else:
+        actual_columns = builder_columns
     return {
-        "capture_method": "runtime_wrap_build_all_battery_features",
+        "capture_method": (
+            "model_state_feature_columns" if fit_columns is not None
+            else "runtime_wrap_build_all_battery_features"
+        ),
         "library_builder_called": bool(calls),
-        "fit_feature_columns": list(last_fit["feature_columns"]) if last_fit else [],
-        "n_fit_features": int(last_fit["n_features"]) if last_fit else 0,
+        "fit_feature_columns": actual_columns,
+        "n_fit_features": len(actual_columns),
+        # Retain the pre-filter builder output for observability / debugging.
+        "n_builder_features": len(builder_columns),
         "calls": calls,
     }
 
@@ -99,6 +129,7 @@ def _worker(queue, path, train_metadata, train_cycle_summary, train_labels, test
     stderr_buffer = io.StringIO()
     phase = {"current": "import"}
     feature_calls: list[dict[str, Any]] = []
+    model = None
     try:
         with contextlib.redirect_stdout(stdout_buffer), contextlib.redirect_stderr(stderr_buffer):
             install_open_guard(tuple(forbidden_patterns))
@@ -122,7 +153,9 @@ def _worker(queue, path, train_metadata, train_cycle_summary, train_labels, test
                 stdout=stdout_buffer.getvalue(),
                 stderr=stderr_buffer.getvalue(),
                 syntax_status="passed",
-                features_used=_features_used_summary(feature_calls),
+                features_used=_features_used_summary(
+                    feature_calls, _model_state_feature_columns(model)
+                ),
             )
         )
     except Exception as exc:
@@ -136,7 +169,9 @@ def _worker(queue, path, train_metadata, train_cycle_summary, train_labels, test
                 stdout=stdout_buffer.getvalue(),
                 stderr=stderr_buffer.getvalue(),
                 syntax_status="passed",
-                features_used=_features_used_summary(feature_calls),
+                features_used=_features_used_summary(
+                    feature_calls, _model_state_feature_columns(model)
+                ),
             )
         )
 

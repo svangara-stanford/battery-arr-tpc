@@ -67,6 +67,13 @@ def main() -> int:
     parser.add_argument("--feature-family-filter", nargs="*", default=[])
     parser.add_argument("--cycle-early-index", type=int, default=9)
     parser.add_argument("--cycle-late-index", type=int, default=99)
+    parser.add_argument("--no-rag", dest="rag_augment", action="store_false", default=True,
+                        help="Disable RAG augmentation of the FeatureScientist prompt "
+                        "(LLM-only ablation isolating the retrieval contribution).")
+    parser.add_argument("--feature-budget", type=int, default=None,
+                        help="Max number of feature columns the FeatureScientist's "
+                        "operator specs may select. A tight budget (e.g. 8) makes "
+                        "operator choice a knowledge decision so RAG can matter.")
     args = parser.parse_args()
     feature_program_paths = list(args.feature_program_path or []) + list(args.feature_program_paths or [])
 
@@ -127,6 +134,8 @@ def main() -> int:
         feature_family_filter=args.feature_family_filter,
         cycle_early_index=args.cycle_early_index,
         cycle_late_index=args.cycle_late_index,
+        rag_augment=args.rag_augment,
+        feature_budget=args.feature_budget,
     )
     return 0
 
